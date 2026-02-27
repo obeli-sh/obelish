@@ -1,0 +1,36 @@
+[package]
+name = "obelisk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "obelisk_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+ts-rs = "10"
+
+[dev-dependencies]
+mockall = "0.13"
+proptest = "1"
+tempfile = "3"
+test-log = { version = "0.2", features = ["trace"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { workspace = true, features = ["test-util"] }
+assert_matches = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmarks"
+harness = false
