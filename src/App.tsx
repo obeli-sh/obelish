@@ -9,7 +9,7 @@ function App() {
   useEffect(() => {
     let mounted = true;
     tauriBridge.pty.spawn({}).then((result) => {
-      if (mounted) setPtyId(result.pty_id);
+      if (mounted) setPtyId(result.ptyId);
     }).catch((err: unknown) => {
       if (mounted) setError(String(err instanceof Error ? err.message : err));
     });

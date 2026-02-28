@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTerminal } from './useTerminal';
 
 interface TerminalPaneProps {
@@ -10,15 +10,17 @@ interface TerminalPaneProps {
 
 export function TerminalPane({ paneId, ptyId, isActive, onReady }: TerminalPaneProps) {
   const { terminalRef, isReady, terminal } = useTerminal(paneId, ptyId);
+  const onReadyFiredRef = useRef(false);
 
   useEffect(() => {
-    if (isActive && terminal.current) {
+    if (isActive && isReady && terminal.current) {
       terminal.current.focus();
     }
-  }, [isActive, terminal]);
+  }, [isActive, isReady, terminal]);
 
   useEffect(() => {
-    if (isReady && onReady) {
+    if (isReady && onReady && !onReadyFiredRef.current) {
+      onReadyFiredRef.current = true;
       onReady();
     }
   }, [isReady, onReady]);

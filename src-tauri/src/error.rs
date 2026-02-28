@@ -13,6 +13,8 @@ pub enum PtyError {
     ResizeFailed(String),
     #[error("PTY already terminated: {id}")]
     AlreadyTerminated { id: String },
+    #[error("Failed to kill PTY: {0}")]
+    KillFailed(#[source] std::io::Error),
 }
 
 #[derive(Debug, Error)]
@@ -33,6 +35,7 @@ impl Serialize for BackendError {
                     PtyError::WriteFailed(_) => "WriteFailed",
                     PtyError::ResizeFailed(_) => "ResizeFailed",
                     PtyError::AlreadyTerminated { .. } => "AlreadyTerminated",
+                    PtyError::KillFailed(_) => "KillFailed",
                 };
                 state.serialize_field("kind", kind)?;
                 state.serialize_field("message", &e.to_string())?;
@@ -81,6 +84,12 @@ mod tests {
                 .into(),
                 "AlreadyTerminated",
                 "PTY already terminated: xyz",
+            ),
+            (
+                PtyError::KillFailed(std::io::Error::new(std::io::ErrorKind::Other, "no process"))
+                    .into(),
+                "KillFailed",
+                "Failed to kill PTY: no process",
             ),
         ];
 

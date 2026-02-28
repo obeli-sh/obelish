@@ -25,6 +25,7 @@ impl Default for AppState {
 }
 
 #[tauri::command]
+#[tracing::instrument(skip(state, app))]
 pub fn pty_spawn(
     state: State<'_, AppState>,
     app: AppHandle,
@@ -47,6 +48,7 @@ pub fn pty_spawn(
 }
 
 #[tauri::command]
+#[tracing::instrument(skip(state))]
 pub fn pty_write(
     state: State<'_, AppState>,
     pty_id: String,
@@ -57,6 +59,7 @@ pub fn pty_write(
 }
 
 #[tauri::command]
+#[tracing::instrument(skip(state))]
 pub fn pty_resize(
     state: State<'_, AppState>,
     pty_id: String,
@@ -68,6 +71,7 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
+#[tracing::instrument(skip(state))]
 pub fn pty_kill(state: State<'_, AppState>, pty_id: String) -> Result<(), BackendError> {
     state.pty_manager.kill(&pty_id)?;
     Ok(())

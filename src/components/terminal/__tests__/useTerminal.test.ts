@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { invoke, mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { listen, emitMockEvent, clearEventMocks } from '@tauri-apps/api/event';
 import { useTerminal } from '../useTerminal';
@@ -22,11 +23,15 @@ function createContainer(): HTMLDivElement {
 
 describe('useTerminal', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     clearInvokeMocks();
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
-    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
   });
 
   it('returns a ref callback and isReady=false initially', () => {
@@ -148,7 +153,7 @@ describe('useTerminal', () => {
       onDataCallback('a');
     });
 
-    expect(invoke).toHaveBeenCalledWith('pty_write', { pty_id: 'pty-1', data: btoa('a') });
+    expect(invoke).toHaveBeenCalledWith('pty_write', { ptyId: 'pty-1', data: btoa('a') });
   });
 
   it('calls pty_resize on terminal resize', async () => {
@@ -172,7 +177,7 @@ describe('useTerminal', () => {
       onResizeCallback({ cols: 120, rows: 40 });
     });
 
-    expect(invoke).toHaveBeenCalledWith('pty_resize', { pty_id: 'pty-1', cols: 120, rows: 40 });
+    expect(invoke).toHaveBeenCalledWith('pty_resize', { ptyId: 'pty-1', cols: 120, rows: 40 });
   });
 
   it('disposes terminal on unmount', async () => {
@@ -215,7 +220,9 @@ describe('useTerminal', () => {
   });
 
   it('falls back to canvas when WebGL addon throws', async () => {
-    // Make loadAddon throw for WebglAddon
+    // Make the WebglAddon constructor throw
+    (WebglAddon as unknown as { shouldThrow: boolean }).shouldThrow = true;
+
     const container = createContainer();
     const { result } = renderHook(() => useTerminal('pane-1', 'pty-1'));
 
@@ -227,12 +234,16 @@ describe('useTerminal', () => {
       expect(result.current.terminal.current).not.toBeNull();
     });
 
-    // The terminal should still be created even if WebGL fails
-    // loadAddon is called with FitAddon first, then WebglAddon
+    // Terminal should still initialize despite WebGL failure
+    expect(result.current.isReady).toBe(true);
+    expect(result.current.terminal.current!.open).toHaveBeenCalled();
+    // FitAddon should still be loaded
     expect(result.current.terminal.current!.loadAddon).toHaveBeenCalledWith(
       expect.any(FitAddon)
     );
-    expect(result.current.terminal.current!.open).toHaveBeenCalled();
+
+    // Restore
+    (WebglAddon as unknown as { shouldThrow: boolean }).shouldThrow = false;
   });
 
   it('sets isReady to true after initialization', async () => {
@@ -263,6 +274,34 @@ describe('useTerminal', () => {
     });
 
     expect(mockResizeObserver.observe).toHaveBeenCalledWith(container);
+  });
+
+  it('cleans up listener if unmount happens before listen resolves', async () => {
+    // Make listen return a promise that we control
+    let resolveListen!: (unlisten: () => void) => void;
+    const unlistenFn = vi.fn();
+    (listen as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () => new Promise<() => void>((resolve) => {
+        resolveListen = resolve;
+      })
+    );
+
+    const container = createContainer();
+    const { result, unmount } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    // Unmount before listen resolves
+    unmount();
+
+    // Now resolve listen - the cancelled flag should cause immediate unlisten
+    await act(async () => {
+      resolveListen(unlistenFn);
+    });
+
+    expect(unlistenFn).toHaveBeenCalled();
   });
 
   it('disconnects ResizeObserver on unmount', async () => {

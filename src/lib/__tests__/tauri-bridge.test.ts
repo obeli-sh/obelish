@@ -9,12 +9,12 @@ describe('tauriBridge', () => {
 
   describe('pty.spawn', () => {
     it('calls invoke with pty_spawn and correct args', async () => {
-      mockInvoke('pty_spawn', () => ({ pty_id: 'test-id' }));
+      mockInvoke('pty_spawn', () => ({ ptyId: 'test-id' }));
 
       const result = await tauriBridge.pty.spawn({ shell: '/bin/bash', cwd: '/home' });
 
       expect(invoke).toHaveBeenCalledWith('pty_spawn', { shell: '/bin/bash', cwd: '/home' });
-      expect(result).toEqual({ pty_id: 'test-id' });
+      expect(result).toEqual({ ptyId: 'test-id' });
     });
 
     it('propagates errors', async () => {
@@ -30,7 +30,7 @@ describe('tauriBridge', () => {
 
       await tauriBridge.pty.write('pty-1', 'aGVsbG8=');
 
-      expect(invoke).toHaveBeenCalledWith('pty_write', { pty_id: 'pty-1', data: 'aGVsbG8=' });
+      expect(invoke).toHaveBeenCalledWith('pty_write', { ptyId: 'pty-1', data: 'aGVsbG8=' });
     });
   });
 
@@ -40,7 +40,7 @@ describe('tauriBridge', () => {
 
       await tauriBridge.pty.resize('pty-1', 120, 40);
 
-      expect(invoke).toHaveBeenCalledWith('pty_resize', { pty_id: 'pty-1', cols: 120, rows: 40 });
+      expect(invoke).toHaveBeenCalledWith('pty_resize', { ptyId: 'pty-1', cols: 120, rows: 40 });
     });
   });
 
@@ -50,7 +50,7 @@ describe('tauriBridge', () => {
 
       await tauriBridge.pty.kill('pty-1');
 
-      expect(invoke).toHaveBeenCalledWith('pty_kill', { pty_id: 'pty-1' });
+      expect(invoke).toHaveBeenCalledWith('pty_kill', { ptyId: 'pty-1' });
     });
   });
 });

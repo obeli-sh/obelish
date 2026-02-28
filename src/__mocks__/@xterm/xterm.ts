@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 
 export class Terminal {
+  static instances: Terminal[] = [];
+
   options: unknown;
   onData = vi.fn(() => ({ dispose: vi.fn() }));
   onResize = vi.fn(() => ({ dispose: vi.fn() }));
@@ -12,5 +14,8 @@ export class Terminal {
   focus = vi.fn();
   clear = vi.fn();
   reset = vi.fn();
-  constructor(options?: unknown) { this.options = options; }
+  constructor(options?: unknown) {
+    this.options = options;
+    Terminal.instances.push(this);
+  }
 }

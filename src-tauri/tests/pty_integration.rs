@@ -86,6 +86,13 @@ fn poll_until(timeout: Duration, interval: Duration, condition: impl Fn() -> boo
     false
 }
 
+fn wait_for_shell_ready(emitter: &TestEventEmitter, pty_id: &str) {
+    let ready = poll_until(Duration::from_secs(5), Duration::from_millis(50), || {
+        !emitter.data_events_for(pty_id).is_empty()
+    });
+    assert!(ready, "shell did not produce output within timeout");
+}
+
 #[test]
 fn spawn_real_shell_and_read_prompt() {
     let emitter = Arc::new(TestEventEmitter::new());
@@ -118,7 +125,7 @@ fn write_echo_read_output() {
     let id = manager.spawn(config, emitter.clone()).unwrap();
 
     // Wait for shell to be ready
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_shell_ready(&emitter, &id);
 
     // Write "echo hello" followed by newline
     let cmd = BASE64.encode(b"echo hello\n");
@@ -148,7 +155,7 @@ fn rapid_sequential_writes() {
     };
 
     let id = manager.spawn(config, emitter.clone()).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_shell_ready(&emitter, &id);
 
     // Rapid sequential writes
     for i in 0..10 {
@@ -156,13 +163,16 @@ fn rapid_sequential_writes() {
         manager.write(&id, &cmd).unwrap();
     }
 
-    // Wait for last message to appear in output
+    // Wait for all messages to appear in output
     let found = poll_until(Duration::from_secs(5), Duration::from_millis(100), || {
         let output = emitter.decoded_output_for(&id);
-        output.contains("msg9")
+        (0..10).all(|i| output.contains(&format!("msg{i}")))
     });
 
-    assert!(found, "expected 'msg9' in output after rapid writes");
+    assert!(
+        found,
+        "expected all msg0..msg9 in output after rapid writes"
+    );
     manager.kill(&id).unwrap();
 }
 
@@ -180,13 +190,10 @@ fn resize_changes_columns() {
     };
 
     let id = manager.spawn(config, emitter.clone()).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_shell_ready(&emitter, &id);
 
     // Resize to 132 columns
     manager.resize(&id, 132, 40).unwrap();
-
-    // Small delay for resize to take effect
-    std::thread::sleep(Duration::from_millis(100));
 
     // Query terminal columns
     let cmd = BASE64.encode(b"tput cols\n");
@@ -216,12 +223,18 @@ fn kill_during_running_process() {
     };
 
     let id = manager.spawn(config, emitter.clone()).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_shell_ready(&emitter, &id);
 
     // Start a long-running process
     let cmd = BASE64.encode(b"sleep 60\n");
     manager.write(&id, &cmd).unwrap();
-    std::thread::sleep(Duration::from_millis(200));
+
+    // Wait for the command to be echoed back (confirming shell processed it)
+    let started = poll_until(Duration::from_secs(3), Duration::from_millis(50), || {
+        let output = emitter.decoded_output_for(&id);
+        output.contains("sleep 60")
+    });
+    assert!(started, "shell should have echoed the command");
 
     // Kill should succeed and clean up
     let result = manager.kill(&id);
@@ -248,7 +261,7 @@ fn shell_exit_triggers_cleanup() {
     };
 
     let id = manager.spawn(config, emitter.clone()).unwrap();
-    std::thread::sleep(Duration::from_millis(500));
+    wait_for_shell_ready(&emitter, &id);
 
     // Send exit command
     let cmd = BASE64.encode(b"exit\n");
@@ -281,7 +294,10 @@ fn concurrent_ptys_independent() {
         })
         .collect();
 
-    std::thread::sleep(Duration::from_millis(500));
+    // Wait for each PTY to be ready
+    for id in &ids {
+        wait_for_shell_ready(&emitter, id);
+    }
 
     // Write unique data to each PTY
     for (i, id) in ids.iter().enumerate() {
@@ -297,6 +313,20 @@ fn concurrent_ptys_independent() {
             output.contains(&marker)
         });
         assert!(found, "PTY {i} should have received '{marker}'");
+    }
+
+    // Verify no cross-contamination
+    for (i, id) in ids.iter().enumerate() {
+        let output = emitter.decoded_output_for(id);
+        for j in 0..5 {
+            if i != j {
+                let other_marker = format!("unique_{j}");
+                assert!(
+                    !output.contains(&other_marker),
+                    "PTY {i} should not contain output from PTY {j}"
+                );
+            }
+        }
     }
 
     // Kill all PTYs

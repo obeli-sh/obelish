@@ -25,6 +25,7 @@ impl Default for PtySize {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+#[serde(rename_all = "camelCase")]
 pub struct PtySpawnResult {
     pub pty_id: String,
 }

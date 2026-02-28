@@ -4,7 +4,7 @@ use crate::pty::emitter::EventEmitter;
 use crate::pty::types::{PtyConfig, PtySize};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +18,7 @@ struct PtySession {
 
 struct PtyManagerInner {
     sessions: HashMap<String, PtySession>,
-    terminated_ids: HashSet<String>,
+    terminated_ids: VecDeque<String>,
 }
 
 pub struct PtyManager {
@@ -32,7 +32,7 @@ impl PtyManager {
             backend,
             inner: Mutex::new(PtyManagerInner {
                 sessions: HashMap::new(),
-                terminated_ids: HashSet::new(),
+                terminated_ids: VecDeque::new(),
             }),
         }
     }
@@ -77,7 +77,7 @@ impl PtyManager {
     pub fn write(&self, id: &str, data: &str) -> Result<(), PtyError> {
         let mut inner = self.inner.lock().expect("manager mutex poisoned");
 
-        if inner.terminated_ids.contains(id) {
+        if inner.terminated_ids.iter().any(|tid| tid == id) {
             return Err(PtyError::AlreadyTerminated { id: id.to_string() });
         }
 
@@ -109,7 +109,7 @@ impl PtyManager {
 
         let mut inner = self.inner.lock().expect("manager mutex poisoned");
 
-        if inner.terminated_ids.contains(id) {
+        if inner.terminated_ids.iter().any(|tid| tid == id) {
             return Err(PtyError::AlreadyTerminated { id: id.to_string() });
         }
 
@@ -128,7 +128,7 @@ impl PtyManager {
         let mut session = {
             let mut inner = self.inner.lock().expect("manager mutex poisoned");
 
-            if inner.terminated_ids.contains(id) {
+            if inner.terminated_ids.iter().any(|tid| tid == id) {
                 return Err(PtyError::AlreadyTerminated { id: id.to_string() });
             }
 
@@ -137,11 +137,17 @@ impl PtyManager {
                 .remove(id)
                 .ok_or_else(|| PtyError::NotFound { id: id.to_string() })?;
 
-            inner.terminated_ids.insert(id.to_string());
+            const MAX_TERMINATED_IDS: usize = 1000;
+            inner.terminated_ids.push_back(id.to_string());
+            if inner.terminated_ids.len() > MAX_TERMINATED_IDS {
+                inner.terminated_ids.pop_front();
+            }
             session
         }; // Lock released here — cleanup happens outside the lock
 
-        let _ = session.child.kill();
+        if let Err(e) = session.child.kill() {
+            tracing::warn!(id, error = %e, "failed to kill PTY child process");
+        }
         session.writer.take(); // Drop writer to help close PTY pipe
         if let Some(thread) = session.read_thread.take() {
             let _ = thread.join();
@@ -172,6 +178,7 @@ fn pty_read_loop(mut reader: Box<dyn Read + Send>, pty_id: String, emitter: Arc<
 mod tests {
     use super::*;
     use crate::pty::emitter::MockEventEmitter;
+    use std::collections::HashSet;
     use std::time::Duration;
 
     // --- Test doubles ---
@@ -231,6 +238,21 @@ mod tests {
 
         fn is_alive(&mut self) -> Result<bool, PtyError> {
             Ok(!self.killed)
+        }
+    }
+
+    struct FailingKillChild;
+
+    impl crate::pty::backend::ChildController for FailingKillChild {
+        fn kill(&mut self) -> Result<(), PtyError> {
+            Err(PtyError::KillFailed(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "process already exited",
+            )))
+        }
+
+        fn is_alive(&mut self) -> Result<bool, PtyError> {
+            Ok(false)
         }
     }
 
@@ -414,7 +436,32 @@ mod tests {
         // Session should be gone from active sessions
         let inner = manager.inner.lock().unwrap();
         assert!(!inner.sessions.contains_key(&id));
-        assert!(inner.terminated_ids.contains(&id));
+        assert!(inner.terminated_ids.iter().any(|tid| tid == &id));
+    }
+
+    #[test]
+    fn kill_logs_warning_on_child_kill_failure() {
+        let emitter = Arc::new(MockEventEmitter::new());
+        let backend = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(|_config| {
+                Ok(SpawnedPty {
+                    writer: Box::new(SinkWriter),
+                    reader: Box::new(EmptyReader),
+                    child: Box::new(FailingKillChild),
+                    resizer: Box::new(FakeResizer),
+                })
+            })),
+        });
+        let manager = PtyManager::new(backend);
+        let id = manager.spawn(default_config(), emitter).unwrap();
+
+        // kill() should still succeed even if child.kill() fails
+        let result = manager.kill(&id);
+        assert!(result.is_ok());
+
+        // Session should still be cleaned up
+        let inner = manager.inner.lock().unwrap();
+        assert!(!inner.sessions.contains_key(&id));
     }
 
     #[test]
@@ -495,6 +542,73 @@ mod tests {
             let result = handle.join().expect("thread panicked");
             assert!(result.is_ok());
         }
+    }
+
+    struct CapturingWriter {
+        data: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Write for CapturingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.data.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn write_base64_decodes_before_write() {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = captured.clone();
+        let backend = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(move |_config| {
+                Ok(SpawnedPty {
+                    writer: Box::new(CapturingWriter {
+                        data: captured_clone.clone(),
+                    }),
+                    reader: Box::new(EmptyReader),
+                    child: Box::new(FakeChild::new()),
+                    resizer: Box::new(FakeResizer),
+                })
+            })),
+        });
+        let emitter = Arc::new(MockEventEmitter::new());
+        let manager = PtyManager::new(backend);
+        let id = manager.spawn(default_config(), emitter).unwrap();
+
+        let b64 = BASE64.encode(b"hello world");
+        manager.write(&id, &b64).unwrap();
+
+        let written = captured.lock().unwrap();
+        assert_eq!(&*written, b"hello world");
+    }
+
+    #[test]
+    fn terminated_ids_bounded_to_max_capacity() {
+        let emitter = Arc::new(MockEventEmitter::new());
+        let manager = PtyManager::new(default_backend());
+
+        // Spawn and kill more than MAX_TERMINATED_IDS (1000) PTYs
+        let mut first_id = String::new();
+        for i in 0..1002 {
+            let id = manager.spawn(default_config(), emitter.clone()).unwrap();
+            if i == 0 {
+                first_id = id.clone();
+            }
+            manager.kill(&id).unwrap();
+        }
+
+        // The VecDeque should be capped at 1000
+        let inner = manager.inner.lock().unwrap();
+        assert!(inner.terminated_ids.len() <= 1000);
+
+        // The very first ID should have been evicted
+        assert!(
+            !inner.terminated_ids.iter().any(|tid| tid == &first_id),
+            "oldest terminated ID should have been evicted"
+        );
     }
 
     #[test]

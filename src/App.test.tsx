@@ -13,11 +13,11 @@ vi.stubGlobal('ResizeObserver', vi.fn(() => ({
 
 describe('App', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     clearInvokeMocks();
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
-    vi.clearAllMocks();
   });
 
   it('shows loading state initially', () => {
@@ -27,7 +27,7 @@ describe('App', () => {
   });
 
   it('spawns a PTY on mount and renders TerminalPane', async () => {
-    mockInvoke('pty_spawn', () => Promise.resolve({ pty_id: 'test-pty-1' }));
+    mockInvoke('pty_spawn', () => Promise.resolve({ ptyId: 'test-pty-1' }));
 
     render(<App />);
 

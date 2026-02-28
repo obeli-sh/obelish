@@ -14,11 +14,12 @@ vi.stubGlobal('ResizeObserver', vi.fn(() => ({
 
 describe('TerminalPane', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    (Terminal as unknown as { instances: unknown[] }).instances = [];
     clearInvokeMocks();
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
-    vi.clearAllMocks();
   });
 
   it('renders terminal container with data-testid', () => {
@@ -32,19 +33,25 @@ describe('TerminalPane', () => {
     );
 
     // Wait for terminal to initialize
+    const mockTerminal = Terminal as unknown as { instances: Terminal[] };
     await vi.waitFor(() => {
-      // Terminal mock should have been created via the hook
+      expect(mockTerminal.instances.length).toBeGreaterThan(0);
     });
 
-    // Need a tick for the effect
+    const instance = mockTerminal.instances[0];
+
+    // Wait for effects to settle
     await act(async () => {
       await new Promise(r => setTimeout(r, 0));
     });
 
+    // Clear focus call history from initialization
+    (instance.focus as ReturnType<typeof vi.fn>).mockClear();
+
     rerender(<TerminalPane paneId="pane-1" ptyId="pty-1" isActive={true} />);
 
     await vi.waitFor(() => {
-      expect(Terminal.prototype.focus || true).toBeTruthy();
+      expect(instance.focus).toHaveBeenCalled();
     });
   });
 
@@ -58,5 +65,30 @@ describe('TerminalPane', () => {
     await vi.waitFor(() => {
       expect(onReady).toHaveBeenCalled();
     });
+  });
+
+  it('calls onReady only once even with rapid re-renders', async () => {
+    const onReady = vi.fn();
+
+    const { rerender } = render(
+      <TerminalPane paneId="pane-1" ptyId="pty-1" isActive={true} onReady={onReady} />
+    );
+
+    await vi.waitFor(() => {
+      expect(onReady).toHaveBeenCalledTimes(1);
+    });
+
+    // Re-render multiple times to simulate Strict Mode double-firing
+    rerender(<TerminalPane paneId="pane-1" ptyId="pty-1" isActive={false} onReady={onReady} />);
+    rerender(<TerminalPane paneId="pane-1" ptyId="pty-1" isActive={true} onReady={onReady} />);
+    rerender(<TerminalPane paneId="pane-1" ptyId="pty-1" isActive={true} onReady={onReady} />);
+
+    // Allow effects to settle
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    // onReady should still only have been called once
+    expect(onReady).toHaveBeenCalledTimes(1);
   });
 });

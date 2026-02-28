@@ -42,6 +42,7 @@ export function useTerminal(_paneId: string, ptyId: string) {
     terminal.open(container);
     fitAddon.fit();
 
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     const setupListener = async () => {
       unlisten = await listen<{ data: string }>(`pty-data-${ptyId}`, (event) => {
@@ -52,6 +53,10 @@ export function useTerminal(_paneId: string, ptyId: string) {
         }
         terminal.write(arr);
       });
+      if (cancelled) {
+        unlisten();
+        return;
+      }
       unlistenRef.current = unlisten;
     };
     setupListener();
@@ -72,6 +77,7 @@ export function useTerminal(_paneId: string, ptyId: string) {
     setIsReady(true);
 
     return () => {
+      cancelled = true;
       resizeObserver.disconnect();
       dataDisposable.dispose();
       resizeDisposable.dispose();
