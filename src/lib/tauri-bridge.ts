@@ -30,4 +30,8 @@ export const tauriBridge = {
       invoke<WorkspaceInfo>('pane_split', { paneId, direction, shell }),
     close: (paneId: string) => invoke<void>('pane_close', { paneId }),
   },
+  session: {
+    save: () => invoke<void>('session_save'),
+    restore: () => invoke<WorkspaceInfo[]>('session_restore'),
+  },
 } as const;

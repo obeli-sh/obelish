@@ -63,13 +63,13 @@ describe('AppLayout', () => {
   });
 
   it('shows loading state initially', () => {
-    mockInvoke('workspace_list', () => new Promise(() => {})); // never resolves
+    mockInvoke('session_restore', () => new Promise(() => {})); // never resolves
     render(<AppLayout />);
     expect(screen.getByText('Loading workspaces...')).toBeInTheDocument();
   });
 
-  it('shows error state when workspace.list fails', async () => {
-    mockInvoke('workspace_list', () => Promise.reject(new Error('backend down')));
+  it('shows error state when session restore fails', async () => {
+    mockInvoke('session_restore', () => Promise.reject(new Error('backend down')));
     render(<AppLayout />);
 
     await waitFor(() => {
@@ -77,10 +77,9 @@ describe('AppLayout', () => {
     });
   });
 
-  it('creates default workspace when list is empty', async () => {
+  it('session restore returns workspaces (backend creates default if needed)', async () => {
     const defaultWs = makeWorkspace('ws-1', 'Workspace 1');
-    mockInvoke('workspace_list', () => Promise.resolve([]));
-    mockInvoke('workspace_create', () => Promise.resolve(defaultWs));
+    mockInvoke('session_restore', () => Promise.resolve([defaultWs]));
 
     render(<AppLayout />);
 
@@ -96,7 +95,7 @@ describe('AppLayout', () => {
 
   it('renders sidebar with workspaces after load', async () => {
     const ws1 = makeWorkspace('ws-1', 'My Workspace', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws1]));
+    mockInvoke('session_restore', () => Promise.resolve([ws1]));
 
     render(<AppLayout />);
 
@@ -110,7 +109,7 @@ describe('AppLayout', () => {
 
   it('renders PaneSplitter with active surface layout', async () => {
     const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<AppLayout />);
 
@@ -123,7 +122,7 @@ describe('AppLayout', () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     const ws2 = makeWorkspace('ws-2', 'Workspace 2', 'pane-2');
-    mockInvoke('workspace_list', () => Promise.resolve([ws1, ws2]));
+    mockInvoke('session_restore', () => Promise.resolve([ws1, ws2]));
 
     render(<AppLayout />);
 
@@ -141,7 +140,7 @@ describe('AppLayout', () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     const newWs = makeWorkspace('ws-new', 'New Workspace', 'pane-new');
-    mockInvoke('workspace_list', () => Promise.resolve([ws1]));
+    mockInvoke('session_restore', () => Promise.resolve([ws1]));
     mockInvoke('workspace_create', () => Promise.resolve(newWs));
 
     render(<AppLayout />);
@@ -162,7 +161,7 @@ describe('AppLayout', () => {
   it('handles workspace close', async () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws1]));
+    mockInvoke('session_restore', () => Promise.resolve([ws1]));
     mockInvoke('workspace_close', () => Promise.resolve());
 
     render(<AppLayout />);
@@ -180,7 +179,7 @@ describe('AppLayout', () => {
 
   it('hides sidebar when sidebarOpen is false', async () => {
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws1]));
+    mockInvoke('session_restore', () => Promise.resolve([ws1]));
 
     // Set sidebar closed before render
     useUiStore.setState({ sidebarOpen: false });
@@ -197,7 +196,7 @@ describe('AppLayout', () => {
 
   it('sets focused pane on initial load', async () => {
     const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<AppLayout />);
 
@@ -208,7 +207,7 @@ describe('AppLayout', () => {
 
   it('subscribes to workspace-changed event', async () => {
     const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<AppLayout />);
 
@@ -232,7 +231,7 @@ describe('AppLayout', () => {
 
   it('shows SurfaceTabBar only when multiple surfaces exist', async () => {
     const ws = makeWorkspaceMultiSurface('ws-1', 'Workspace 1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<AppLayout />);
 
@@ -247,7 +246,7 @@ describe('AppLayout', () => {
 
   it('does not show SurfaceTabBar for single surface', async () => {
     const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<AppLayout />);
 
@@ -258,15 +257,21 @@ describe('AppLayout', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
-  it('sets focused pane when creating default workspace', async () => {
-    const defaultWs = makeWorkspace('ws-1', 'Workspace 1', 'pane-default');
-    mockInvoke('workspace_list', () => Promise.resolve([]));
-    mockInvoke('workspace_create', () => Promise.resolve(defaultWs));
+  it('restores multiple workspaces and activates first', async () => {
+    const ws1 = makeWorkspace('ws-1', 'Work', 'pane-1');
+    const ws2 = makeWorkspace('ws-2', 'Personal', 'pane-2');
+    mockInvoke('session_restore', () => Promise.resolve([ws1, ws2]));
 
     render(<AppLayout />);
 
     await waitFor(() => {
-      expect(useUiStore.getState().focusedPaneId).toBe('pane-default');
+      expect(screen.queryByText('Loading workspaces...')).not.toBeInTheDocument();
     });
+
+    const state = useWorkspaceStore.getState();
+    expect(state.workspaces['ws-1']).toBeDefined();
+    expect(state.workspaces['ws-2']).toBeDefined();
+    expect(state.activeWorkspaceId).toBe('ws-1');
+    expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
   });
 });

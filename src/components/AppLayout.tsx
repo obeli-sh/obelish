@@ -29,21 +29,13 @@ export function AppLayout() {
 
     const init = async () => {
       try {
-        const list = await tauriBridge.workspace.list();
+        const list = await tauriBridge.session.restore();
         if (cancelled) return;
 
-        if (list.length === 0) {
-          const ws = await tauriBridge.workspace.create({ name: 'Workspace 1' });
-          if (cancelled) return;
+        for (const ws of list) {
           useWorkspaceStore.getState()._syncWorkspace(ws);
-          useWorkspaceStore.getState()._setActiveWorkspace(ws.id);
-          if (ws.surfaces.length > 0 && ws.surfaces[0].layout.type === 'leaf') {
-            useUiStore.getState().setFocusedPane(ws.surfaces[0].layout.paneId);
-          }
-        } else {
-          for (const ws of list) {
-            useWorkspaceStore.getState()._syncWorkspace(ws);
-          }
+        }
+        if (list.length > 0) {
           useWorkspaceStore.getState()._setActiveWorkspace(list[0].id);
           const firstWs = list[0];
           if (firstWs.surfaces.length > 0 && firstWs.surfaces[0].layout.type === 'leaf') {

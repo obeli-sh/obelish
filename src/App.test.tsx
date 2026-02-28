@@ -43,14 +43,14 @@ describe('App', () => {
   });
 
   it('renders AppLayout with loading state initially', () => {
-    mockInvoke('workspace_list', () => new Promise(() => {}));
+    mockInvoke('session_restore', () => new Promise(() => {}));
     render(<App />);
     expect(screen.getByText('Loading workspaces...')).toBeInTheDocument();
   });
 
   it('renders workspace layout after loading', async () => {
     const ws = makeWorkspace('ws-1', 'Test Workspace');
-    mockInvoke('workspace_list', () => Promise.resolve([ws]));
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
 
     render(<App />);
 

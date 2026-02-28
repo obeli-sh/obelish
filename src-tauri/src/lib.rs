@@ -1,14 +1,52 @@
 pub mod commands;
 pub mod error;
+pub mod persistence;
 pub mod pty;
 pub mod workspace;
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use commands::AppState;
+use persistence::fs::FsPersistence;
+use persistence::session::SessionManager;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState::new())
+        .setup(|app| {
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve app data directory");
+
+            let backend = Arc::new(
+                FsPersistence::new(&app_data_dir).expect("failed to create persistence backend"),
+            );
+            let session_manager = SessionManager::new(backend);
+            let app_state = AppState::new(session_manager);
+            app.manage(app_state);
+
+            // Start autosave timer (30s interval)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(30));
+                loop {
+                    interval.tick().await;
+                    let state = app_handle.state::<AppState>();
+                    let ws = state
+                        .workspace_state
+                        .read()
+                        .expect("workspace state lock poisoned");
+                    if let Err(e) = state.session_manager.save_if_dirty(&ws) {
+                        tracing::error!("Autosave failed: {e}");
+                    }
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::pty_spawn,
             commands::pty_write,
@@ -19,7 +57,24 @@ pub fn run() {
             commands::workspace_list,
             commands::pane_split,
             commands::pane_close,
+            commands::session_save,
+            commands::session_restore,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+                let ws = state
+                    .workspace_state
+                    .read()
+                    .expect("workspace state lock poisoned");
+                if let Err(e) = state.session_manager.save(&ws) {
+                    tracing::error!("Failed to save state on exit: {e}");
+                }
+                if let Err(e) = state.session_manager.write_clean_shutdown_marker() {
+                    tracing::error!("Failed to write clean shutdown marker: {e}");
+                }
+            }
+        });
 }

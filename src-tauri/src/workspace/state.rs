@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::WorkspaceError;
+use crate::persistence::session::SessionState;
 use crate::workspace::types::{
     LayoutNode, PaneCloseResult, PaneInfo, PaneSplitResult, PaneType, SplitDirection, SurfaceInfo,
     WorkspaceInfo,
@@ -19,6 +20,22 @@ impl WorkspaceState {
             workspaces: Vec::new(),
             active_workspace_id: None,
             panes: HashMap::new(),
+        }
+    }
+
+    pub fn to_session_state(&self) -> SessionState {
+        SessionState {
+            workspaces: self.workspaces.clone(),
+            active_workspace_id: self.active_workspace_id.clone(),
+            panes: self.panes.clone(),
+        }
+    }
+
+    pub fn from_session_state(session: SessionState) -> Self {
+        Self {
+            workspaces: session.workspaces,
+            active_workspace_id: session.active_workspace_id,
+            panes: session.panes,
         }
     }
 
@@ -179,8 +196,7 @@ impl WorkspaceState {
         let would_remove_surface = surface_idx
             .map(|i| remove_from_layout(&workspace.surfaces[i].layout, pane_id).is_none())
             .unwrap_or(false);
-        let would_close_workspace =
-            would_remove_surface && workspace.surfaces.len() == 1;
+        let would_close_workspace = would_remove_surface && workspace.surfaces.len() == 1;
 
         if would_close_workspace && self.workspaces.len() <= 1 {
             return Err(WorkspaceError::LastWorkspace);
@@ -241,6 +257,12 @@ impl WorkspaceState {
 
     pub fn get_pane(&self, id: &str) -> Option<&PaneInfo> {
         self.panes.get(id)
+    }
+
+    pub fn update_pane_pty(&mut self, pane_id: &str, new_pty_id: String) {
+        if let Some(pane) = self.panes.get_mut(pane_id) {
+            pane.pty_id = new_pty_id;
+        }
     }
 
     fn collect_pane_ids(&mut self, layout: &LayoutNode, pty_ids: &mut Vec<String>) {

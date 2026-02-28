@@ -32,11 +32,23 @@ pub enum PtyError {
 }
 
 #[derive(Debug, Error)]
+pub enum PersistenceError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("Corrupted data: {reason}")]
+    Corrupted { reason: String },
+}
+
+#[derive(Debug, Error)]
 pub enum BackendError {
     #[error(transparent)]
     Pty(#[from] PtyError),
     #[error(transparent)]
     Workspace(#[from] WorkspaceError),
+    #[error(transparent)]
+    Persistence(#[from] PersistenceError),
 }
 
 impl Serialize for BackendError {
@@ -63,6 +75,15 @@ impl Serialize for BackendError {
                     WorkspaceError::SurfaceNotFound { .. } => "SurfaceNotFound",
                     WorkspaceError::InvalidSplit { .. } => "InvalidSplit",
                     WorkspaceError::LastWorkspace => "LastWorkspace",
+                };
+                state.serialize_field("kind", kind)?;
+                state.serialize_field("message", &e.to_string())?;
+            }
+            BackendError::Persistence(e) => {
+                let kind = match e {
+                    PersistenceError::Io(_) => "PersistenceIo",
+                    PersistenceError::Serialization(_) => "PersistenceSerialization",
+                    PersistenceError::Corrupted { .. } => "PersistenceCorrupted",
                 };
                 state.serialize_field("kind", kind)?;
                 state.serialize_field("message", &e.to_string())?;

@@ -157,4 +157,40 @@ describe('tauriBridge', () => {
       expect(invoke).toHaveBeenCalledWith('pane_close', { paneId: 'pane-1' });
     });
   });
+
+  describe('session.save', () => {
+    it('calls invoke with session_save', async () => {
+      mockInvoke('session_save', () => undefined);
+
+      await tauriBridge.session.save();
+
+      expect(invoke).toHaveBeenCalledWith('session_save');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('session_save', () => Promise.reject(new Error('save failed')));
+
+      await expect(tauriBridge.session.save()).rejects.toThrow('save failed');
+    });
+  });
+
+  describe('session.restore', () => {
+    it('calls invoke with session_restore and returns workspaces', async () => {
+      const mockList = [
+        { id: 'ws-1', name: 'Workspace 1', surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
+      ];
+      mockInvoke('session_restore', () => mockList);
+
+      const result = await tauriBridge.session.restore();
+
+      expect(invoke).toHaveBeenCalledWith('session_restore');
+      expect(result).toEqual(mockList);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('session_restore', () => Promise.reject(new Error('restore failed')));
+
+      await expect(tauriBridge.session.restore()).rejects.toThrow('restore failed');
+    });
+  });
 });
