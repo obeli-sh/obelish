@@ -1,42 +1,70 @@
-import { useState, useCallback, useRef } from 'react';
+import { useReducer, useCallback, useRef } from 'react';
+
+interface BrowserState {
+  history: string[];
+  historyIndex: number;
+  isLoading: boolean;
+}
+
+type BrowserAction =
+  | { type: 'navigate'; url: string }
+  | { type: 'goBack' }
+  | { type: 'goForward' }
+  | { type: 'refresh' }
+  | { type: 'loaded' };
+
+function browserReducer(state: BrowserState, action: BrowserAction): BrowserState {
+  switch (action.type) {
+    case 'navigate': {
+      const newHistory = state.history.slice(0, state.historyIndex + 1);
+      newHistory.push(action.url);
+      return {
+        history: newHistory,
+        historyIndex: newHistory.length - 1,
+        isLoading: true,
+      };
+    }
+    case 'goBack':
+      if (state.historyIndex <= 0) return state;
+      return { ...state, historyIndex: state.historyIndex - 1, isLoading: true };
+    case 'goForward':
+      if (state.historyIndex >= state.history.length - 1) return state;
+      return { ...state, historyIndex: state.historyIndex + 1, isLoading: true };
+    case 'refresh':
+      return { ...state, isLoading: true };
+    case 'loaded':
+      return { ...state, isLoading: false };
+  }
+}
 
 export function useBrowser(paneId: string, initialUrl: string) {
-  const [history, setHistory] = useState<string[]>([initialUrl]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const iframeElRef = useRef<HTMLIFrameElement | null>(null);
+  const [state, dispatch] = useReducer(browserReducer, {
+    history: [initialUrl],
+    historyIndex: 0,
+    isLoading: true,
+  });
 
-  const currentUrl = history[historyIndex];
-  const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < history.length - 1;
+  const iframeElRef = useRef<HTMLIFrameElement | null>(null);
+  const handleLoadRef = useRef(() => dispatch({ type: 'loaded' }));
+
+  const currentUrl = state.history[state.historyIndex];
+  const canGoBack = state.historyIndex > 0;
+  const canGoForward = state.historyIndex < state.history.length - 1;
 
   const navigate = useCallback((url: string) => {
-    setHistory((prev) => {
-      const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push(url);
-      return newHistory;
-    });
-    setHistoryIndex((prev) => prev + 1);
-    setIsLoading(true);
-  }, [historyIndex]);
+    dispatch({ type: 'navigate', url });
+  }, []);
 
   const goBack = useCallback(() => {
-    if (historyIndex > 0) {
-      setHistoryIndex((prev) => prev - 1);
-      setIsLoading(true);
-    }
-  }, [historyIndex]);
+    dispatch({ type: 'goBack' });
+  }, []);
 
   const goForward = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex((prev) => prev + 1);
-      setIsLoading(true);
-    }
-  }, [historyIndex, history.length]);
+    dispatch({ type: 'goForward' });
+  }, []);
 
   const refresh = useCallback(() => {
-    setIsLoading(true);
-    // Re-set the iframe src to trigger a reload
+    dispatch({ type: 'refresh' });
     if (iframeElRef.current) {
       iframeElRef.current.src = currentUrl;
     }
@@ -44,24 +72,20 @@ export function useBrowser(paneId: string, initialUrl: string) {
 
   const iframeRef = useCallback((node: HTMLIFrameElement | null) => {
     if (iframeElRef.current) {
-      iframeElRef.current.removeEventListener('load', handleLoad);
+      iframeElRef.current.removeEventListener('load', handleLoadRef.current);
     }
     iframeElRef.current = node;
     if (node) {
-      node.addEventListener('load', handleLoad);
+      node.addEventListener('load', handleLoadRef.current);
     }
   }, []);
-
-  function handleLoad() {
-    setIsLoading(false);
-  }
 
   return {
     iframeRef,
     currentUrl,
     canGoBack,
     canGoForward,
-    isLoading,
+    isLoading: state.isLoading,
     navigate,
     goBack,
     goForward,

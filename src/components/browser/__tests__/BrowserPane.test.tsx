@@ -78,7 +78,7 @@ describe('BrowserPane', () => {
     setupMock();
     render(<BrowserPane paneId="pane-1" url="https://example.com" isActive={true} />);
     const iframe = screen.getByTitle('Browser panel') as HTMLIFrameElement;
-    expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-forms allow-popups');
+    expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-popups');
   });
 
   it('sets_iframe_permissions', () => {

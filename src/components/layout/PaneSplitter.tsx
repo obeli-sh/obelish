@@ -15,7 +15,7 @@ export function PaneSplitter({ layout, activePaneId, onPaneClick }: PaneSplitter
 
   if (layout.type === 'leaf') {
     const isActive = activePaneId === layout.paneId;
-    const isBrowser = layout.ptyId === '';
+    const isBrowser = layout.paneId in browserPaneUrls;
 
     if (isBrowser) {
       const url = browserPaneUrls[layout.paneId] ?? 'about:blank';

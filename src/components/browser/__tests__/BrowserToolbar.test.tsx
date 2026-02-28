@@ -86,6 +86,51 @@ describe('BrowserToolbar', () => {
     expect(onNavigate).toHaveBeenCalledWith('http://example.com');
   });
 
+  it('rejects_javascript_urls', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(<BrowserToolbar {...makeProps({ onNavigate })} />);
+    const input = screen.getByLabelText('URL');
+
+    await user.clear(input);
+    await user.type(input, 'javascript:alert(1){Enter}');
+
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it('rejects_data_urls', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(<BrowserToolbar {...makeProps({ onNavigate })} />);
+    const input = screen.getByLabelText('URL');
+
+    await user.clear(input);
+    await user.type(input, 'data:text/html,test{Enter}');
+
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it('rejects_file_urls', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    render(<BrowserToolbar {...makeProps({ onNavigate })} />);
+    const input = screen.getByLabelText('URL');
+
+    await user.clear(input);
+    await user.type(input, 'file:///etc/passwd{Enter}');
+
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it('syncs_input_value_when_url_prop_changes', () => {
+    const { rerender } = render(<BrowserToolbar {...makeProps({ url: 'https://example.com' })} />);
+    const input = screen.getByLabelText('URL') as HTMLInputElement;
+    expect(input.value).toBe('https://example.com');
+
+    rerender(<BrowserToolbar {...makeProps({ url: 'https://new.com' })} />);
+    expect(input.value).toBe('https://new.com');
+  });
+
   it('shows_loading_indicator_when_isLoading_is_true', () => {
     render(<BrowserToolbar {...makeProps({ isLoading: true })} />);
     expect(screen.getByRole('progressbar')).toBeInTheDocument();

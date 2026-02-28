@@ -196,11 +196,11 @@ describe('PaneSplitter', () => {
     expect(screen.queryByTestId('terminal-pane-pane-browser')).not.toBeInTheDocument();
   });
 
-  it('renders BrowserPane with about:blank when no url stored', () => {
+  it('renders terminal when empty ptyId but not in browserPaneUrls (PTY failure)', () => {
     useWorkspaceStore.setState({
       browserPaneUrls: {},
     });
-    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-browser', ptyId: '' };
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-broken', ptyId: '' };
 
     render(
       <PaneSplitter
@@ -210,8 +210,9 @@ describe('PaneSplitter', () => {
       />
     );
 
-    const browser = screen.getByTestId('browser-pane-pane-browser');
-    expect(browser).toHaveAttribute('data-url', 'about:blank');
+    // Should render as terminal (PTY failure case), not browser
+    expect(screen.getByTestId('terminal-pane-pane-broken')).toBeInTheDocument();
+    expect(screen.queryByTestId('browser-pane-pane-broken')).not.toBeInTheDocument();
   });
 
   it('renders mixed terminal and browser panes in a split', () => {

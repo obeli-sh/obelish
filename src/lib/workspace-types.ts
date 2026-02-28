@@ -34,7 +34,7 @@ export interface PaneInfo {
   ptyId: string;
   paneType: PaneType;
   cwd: string | null;
-  url?: string;
+  url: string | null;
 }
 
 export type PaneType = 'terminal' | 'browser';

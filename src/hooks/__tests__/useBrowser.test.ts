@@ -109,6 +109,29 @@ describe('useBrowser', () => {
     expect(result.current.canGoForward).toBe(false);
   });
 
+  it('rapid_sequential_navigations_maintain_consistent_history', () => {
+    const { result } = renderHook(() => useBrowser('pane-1', 'https://example.com'));
+
+    // Navigate rapidly in a single act (tests atomic state updates)
+    act(() => {
+      result.current.navigate('https://first.com');
+      result.current.navigate('https://second.com');
+      result.current.navigate('https://third.com');
+    });
+
+    expect(result.current.currentUrl).toBe('https://third.com');
+    expect(result.current.canGoBack).toBe(true);
+
+    // Go back through all entries to verify history is consistent
+    act(() => { result.current.goBack(); });
+    expect(result.current.currentUrl).toBe('https://second.com');
+    act(() => { result.current.goBack(); });
+    expect(result.current.currentUrl).toBe('https://first.com');
+    act(() => { result.current.goBack(); });
+    expect(result.current.currentUrl).toBe('https://example.com');
+    expect(result.current.canGoBack).toBe(false);
+  });
+
   it('isLoading_starts_as_true_and_becomes_false', () => {
     const { result } = renderHook(() => useBrowser('pane-1', 'https://example.com'));
 

@@ -26,7 +26,7 @@ export function BrowserPane({ paneId, url, isActive }: BrowserPaneProps) {
         ref={browser.iframeRef}
         src={browser.currentUrl}
         title="Browser panel"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox="allow-scripts allow-forms allow-popups"
         allow="clipboard-read; clipboard-write"
         style={iframeStyle}
       />

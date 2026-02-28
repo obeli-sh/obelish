@@ -181,6 +181,13 @@ impl WorkspaceState {
         new_pane_id: String,
         url: String,
     ) -> Result<PaneSplitResult, WorkspaceError> {
+        let lower_url = url.to_lowercase();
+        if !lower_url.starts_with("http://") && !lower_url.starts_with("https://") {
+            return Err(WorkspaceError::InvalidUrl {
+                reason: format!("only http:// and https:// URLs are allowed, got: {url}"),
+            });
+        }
+
         if !self.panes.contains_key(pane_id) {
             return Err(WorkspaceError::PaneNotFound {
                 id: pane_id.to_string(),
@@ -990,6 +997,66 @@ mod tests {
     }
 
     #[test]
+    fn open_browser_pane_rejects_javascript_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "javascript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_data_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "data:text/html,<script>alert(1)</script>".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_file_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "file:///etc/passwd".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
     fn layout_tree_serialize_roundtrip() {
         let layout = LayoutNode::Split {
             direction: SplitDirection::Horizontal,
@@ -1121,6 +1188,13 @@ mod tests {
                 "InvalidSplit",
             ),
             (WorkspaceError::LastWorkspace.into(), "LastWorkspace"),
+            (
+                WorkspaceError::InvalidUrl {
+                    reason: "bad".to_string(),
+                }
+                .into(),
+                "InvalidUrl",
+            ),
         ];
 
         for (error, expected_kind) in cases {

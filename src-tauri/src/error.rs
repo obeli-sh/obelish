@@ -13,6 +13,8 @@ pub enum WorkspaceError {
     InvalidSplit { reason: String },
     #[error("cannot close last workspace")]
     LastWorkspace,
+    #[error("invalid URL: {reason}")]
+    InvalidUrl { reason: String },
 }
 
 #[derive(Debug, Error)]
@@ -75,6 +77,7 @@ impl Serialize for BackendError {
                     WorkspaceError::SurfaceNotFound { .. } => "SurfaceNotFound",
                     WorkspaceError::InvalidSplit { .. } => "InvalidSplit",
                     WorkspaceError::LastWorkspace => "LastWorkspace",
+                    WorkspaceError::InvalidUrl { .. } => "InvalidUrl",
                 };
                 state.serialize_field("kind", kind)?;
                 state.serialize_field("message", &e.to_string())?;

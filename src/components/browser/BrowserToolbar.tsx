@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useState, useEffect, type KeyboardEvent } from 'react';
 
 export interface BrowserToolbarProps {
   url: string;
@@ -11,9 +11,14 @@ export interface BrowserToolbarProps {
   onRefresh: () => void;
 }
 
+const DANGEROUS_SCHEMES = /^(javascript|data|file|vbscript|blob):/i;
+
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
   if (trimmed === '') return trimmed;
+  if (DANGEROUS_SCHEMES.test(trimmed)) {
+    return '';
+  }
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
     return `http://${trimmed}`;
   }
@@ -32,10 +37,17 @@ export function BrowserToolbar({
 }: BrowserToolbarProps) {
   const [inputValue, setInputValue] = useState(url);
 
+  useEffect(() => {
+    setInputValue(url);
+  }, [url]);
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      onNavigate(normalizeUrl(inputValue));
+      const normalized = normalizeUrl(inputValue);
+      if (normalized) {
+        onNavigate(normalized);
+      }
     }
   };
 
