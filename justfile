@@ -21,6 +21,10 @@ coverage:
     cargo test --workspace
     bun run test:coverage
 
+# Run benchmarks
+bench:
+    cargo bench -p obelisk
+
 # Build for production
 build:
     bun tauri build
