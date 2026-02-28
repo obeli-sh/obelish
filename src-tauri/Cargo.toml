@@ -20,6 +20,9 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 ts-rs = "10"
+portable-pty = "0.8"
+base64 = "0.22"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 mockall = "0.13"
