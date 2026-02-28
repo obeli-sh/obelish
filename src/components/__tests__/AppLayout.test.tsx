@@ -26,11 +26,11 @@ vi.stubGlobal('ResizeObserver', vi.fn(() => ({
 // Import after mocks
 import { AppLayout } from '../AppLayout';
 
-function makeWorkspace(id: string, name: string, paneId = 'pane-1'): WorkspaceInfo {
+function makeWorkspace(id: string, name: string, paneId = 'pane-1', ptyId = 'pty-1'): WorkspaceInfo {
   return {
     id,
     name,
-    surfaces: [{ id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId } }],
+    surfaces: [{ id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId, ptyId } }],
     activeSurfaceIndex: 0,
     createdAt: Date.now(),
   };
@@ -41,8 +41,8 @@ function makeWorkspaceMultiSurface(id: string, name: string): WorkspaceInfo {
     id,
     name,
     surfaces: [
-      { id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId: 'pane-1' } },
-      { id: `${id}-s2`, name: 'Surface 2', layout: { type: 'leaf', paneId: 'pane-2' } },
+      { id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' } },
+      { id: `${id}-s2`, name: 'Surface 2', layout: { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' } },
     ],
     activeSurfaceIndex: 0,
     createdAt: Date.now(),
@@ -139,7 +139,7 @@ describe('AppLayout', () => {
   it('handles workspace create', async () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    const newWs = makeWorkspace('ws-new', 'New Workspace', 'pane-new');
+    const newWs = makeWorkspace('ws-new', 'New Workspace', 'pane-new', 'pty-new');
     mockInvoke('session_restore', () => Promise.resolve([ws1]));
     mockInvoke('workspace_create', () => Promise.resolve(newWs));
 

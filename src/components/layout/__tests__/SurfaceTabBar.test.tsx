@@ -9,17 +9,17 @@ const surfaces: SurfaceInfo[] = [
   {
     id: 'surface-1',
     name: 'Surface 1',
-    layout: { type: 'leaf', paneId: 'pane-1' },
+    layout: { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
   },
   {
     id: 'surface-2',
     name: 'Surface 2',
-    layout: { type: 'leaf', paneId: 'pane-2' },
+    layout: { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
   },
   {
     id: 'surface-3',
     name: 'Surface 3',
-    layout: { type: 'leaf', paneId: 'pane-3' },
+    layout: { type: 'leaf', paneId: 'pane-3', ptyId: 'pty-3' },
   },
 ];
 

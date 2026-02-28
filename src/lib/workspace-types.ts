@@ -17,6 +17,7 @@ export type LayoutNode = LeafNode | SplitNode;
 export interface LeafNode {
   type: 'leaf';
   paneId: string;
+  ptyId: string;
 }
 
 export interface SplitNode {

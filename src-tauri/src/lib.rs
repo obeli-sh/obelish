@@ -35,11 +35,18 @@ pub fn run() {
                 loop {
                     interval.tick().await;
                     let state = app_handle.state::<AppState>();
-                    let ws = state
-                        .workspace_state
-                        .read()
-                        .expect("workspace state lock poisoned");
-                    if let Err(e) = state.session_manager.save_if_dirty(&ws) {
+                    if !state.session_manager.is_dirty() {
+                        continue;
+                    }
+                    // Clone session state under lock, then release before I/O
+                    let session = {
+                        let ws = state
+                            .workspace_state
+                            .read()
+                            .expect("workspace state lock poisoned");
+                        ws.to_session_state()
+                    };
+                    if let Err(e) = state.session_manager.save_from_session(&session) {
                         tracing::error!("Autosave failed: {e}");
                     }
                 }
@@ -65,11 +72,14 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app_handle.state::<AppState>();
-                let ws = state
-                    .workspace_state
-                    .read()
-                    .expect("workspace state lock poisoned");
-                if let Err(e) = state.session_manager.save(&ws) {
+                let session = {
+                    let ws = state
+                        .workspace_state
+                        .read()
+                        .expect("workspace state lock poisoned");
+                    ws.to_session_state()
+                };
+                if let Err(e) = state.session_manager.save_from_session(&session) {
                     tracing::error!("Failed to save state on exit: {e}");
                 }
                 if let Err(e) = state.session_manager.write_clean_shutdown_marker() {

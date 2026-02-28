@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
-import type { LayoutNode, PaneInfo } from '../../../lib/workspace-types';
+import type { LayoutNode } from '../../../lib/workspace-types';
 
 vi.mock('react-resizable-panels');
 vi.mock('../../terminal/TerminalPane', () => ({
@@ -13,25 +13,20 @@ vi.mock('../../terminal/TerminalPane', () => ({
 import { PaneSplitter } from '../PaneSplitter';
 
 describe('PaneSplitter', () => {
-  const defaultPanes: Record<string, PaneInfo> = {
-    'pane-1': { id: 'pane-1', ptyId: 'pty-1', paneType: 'terminal', cwd: null },
-    'pane-2': { id: 'pane-2', ptyId: 'pty-2', paneType: 'terminal', cwd: null },
-    'pane-3': { id: 'pane-3', ptyId: 'pty-3', paneType: 'terminal', cwd: null },
-  };
-
-  it('renders single leaf as PaneWrapper', () => {
-    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1' };
+  it('renders single leaf as PaneWrapper with correct ptyId', () => {
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' };
 
     render(
       <PaneSplitter
         layout={layout}
         activePaneId="pane-1"
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
-    expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
+    const terminal = screen.getByTestId('terminal-pane-pane-1');
+    expect(terminal).toBeInTheDocument();
+    expect(terminal).toHaveAttribute('data-pty-id', 'pty-1');
   });
 
   it('renders horizontal split with two panels and a resize handle', () => {
@@ -39,8 +34,8 @@ describe('PaneSplitter', () => {
       type: 'split',
       direction: 'horizontal',
       children: [
-        { type: 'leaf', paneId: 'pane-1' },
-        { type: 'leaf', paneId: 'pane-2' },
+        { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+        { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
       ],
       sizes: [0.5, 0.5],
     };
@@ -50,7 +45,6 @@ describe('PaneSplitter', () => {
         layout={layout}
         activePaneId={null}
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
@@ -65,8 +59,8 @@ describe('PaneSplitter', () => {
       type: 'split',
       direction: 'vertical',
       children: [
-        { type: 'leaf', paneId: 'pane-1' },
-        { type: 'leaf', paneId: 'pane-2' },
+        { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+        { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
       ],
       sizes: [0.6, 0.4],
     };
@@ -76,7 +70,6 @@ describe('PaneSplitter', () => {
         layout={layout}
         activePaneId={null}
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
@@ -97,12 +90,12 @@ describe('PaneSplitter', () => {
           type: 'split',
           direction: 'vertical',
           children: [
-            { type: 'leaf', paneId: 'pane-1' },
-            { type: 'leaf', paneId: 'pane-2' },
+            { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+            { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
           ],
           sizes: [0.5, 0.5],
         },
-        { type: 'leaf', paneId: 'pane-3' },
+        { type: 'leaf', paneId: 'pane-3', ptyId: 'pty-3' },
       ],
       sizes: [0.7, 0.3],
     };
@@ -112,7 +105,6 @@ describe('PaneSplitter', () => {
         layout={layout}
         activePaneId={null}
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
@@ -129,14 +121,13 @@ describe('PaneSplitter', () => {
   });
 
   it('passes activePaneId to PaneWrapper', () => {
-    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1' };
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' };
 
     render(
       <PaneSplitter
         layout={layout}
         activePaneId="pane-1"
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
@@ -146,14 +137,13 @@ describe('PaneSplitter', () => {
 
   it('passes onPaneClick to PaneWrapper', async () => {
     const onPaneClick = vi.fn();
-    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1' };
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' };
 
     const { container } = render(
       <PaneSplitter
         layout={layout}
         activePaneId={null}
         onPaneClick={onPaneClick}
-        panes={defaultPanes}
       />
     );
 
@@ -164,19 +154,18 @@ describe('PaneSplitter', () => {
     expect(onPaneClick).toHaveBeenCalledWith('pane-1');
   });
 
-  it('falls back to paneId as ptyId when pane not found in panes record', () => {
-    const layout: LayoutNode = { type: 'leaf', paneId: 'unknown-pane' };
+  it('uses ptyId from leaf layout node directly', () => {
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-abc', ptyId: 'pty-xyz' };
 
     render(
       <PaneSplitter
         layout={layout}
         activePaneId={null}
         onPaneClick={vi.fn()}
-        panes={defaultPanes}
       />
     );
 
-    const terminal = screen.getByTestId('terminal-pane-unknown-pane');
-    expect(terminal).toHaveAttribute('data-pty-id', 'unknown-pane');
+    const terminal = screen.getByTestId('terminal-pane-pane-abc');
+    expect(terminal).toHaveAttribute('data-pty-id', 'pty-xyz');
   });
 });

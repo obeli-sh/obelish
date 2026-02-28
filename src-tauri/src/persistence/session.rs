@@ -43,7 +43,11 @@ impl SessionManager {
 
     pub fn save(&self, state: &WorkspaceState) -> Result<(), PersistenceError> {
         let session = state.to_session_state();
-        let data = serde_json::to_vec_pretty(&session)?;
+        self.save_from_session(&session)
+    }
+
+    pub fn save_from_session(&self, session: &SessionState) -> Result<(), PersistenceError> {
+        let data = serde_json::to_vec_pretty(session)?;
         self.backend.save(SESSION_KEY, &data)?;
         self.dirty.store(false, Ordering::Release);
         Ok(())
@@ -63,7 +67,7 @@ impl SessionManager {
     }
 
     pub fn save_if_dirty(&self, state: &WorkspaceState) -> Result<bool, PersistenceError> {
-        if self.dirty.load(Ordering::Acquire) {
+        if self.is_dirty() {
             self.save(state)?;
             Ok(true)
         } else {
@@ -156,7 +160,7 @@ mod tests {
                 "surfaces": [{
                     "id": "surf-1",
                     "name": "Main",
-                    "layout": {"type": "leaf", "paneId": "pane-1"}
+                    "layout": {"type": "leaf", "paneId": "pane-1", "ptyId": "pty-1"}
                 }],
                 "activeSurfaceIndex": 0,
                 "createdAt": 1234567890
@@ -187,23 +191,7 @@ mod tests {
         let json = serde_json::to_string(&session).unwrap();
         let deserialized: SessionState = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(session.workspaces.len(), deserialized.workspaces.len());
-        assert_eq!(
-            session.active_workspace_id,
-            deserialized.active_workspace_id
-        );
-        assert_eq!(session.panes.len(), deserialized.panes.len());
-
-        // Verify workspace names match
-        for (orig, deser) in session
-            .workspaces
-            .iter()
-            .zip(deserialized.workspaces.iter())
-        {
-            assert_eq!(orig.name, deser.name);
-            assert_eq!(orig.id, deser.id);
-            assert_eq!(orig.surfaces.len(), deser.surfaces.len());
-        }
+        assert_eq!(session, deserialized);
     }
 
     #[test]
@@ -387,12 +375,6 @@ mod tests {
         let restored = WorkspaceState::from_session_state(session.clone());
         let restored_session = restored.to_session_state();
 
-        // Verify the restored state produces the same session
-        assert_eq!(restored_session.workspaces.len(), session.workspaces.len());
-        assert_eq!(restored_session.panes.len(), session.panes.len());
-        assert_eq!(
-            restored_session.active_workspace_id,
-            session.active_workspace_id
-        );
+        assert_eq!(restored_session, session);
     }
 }

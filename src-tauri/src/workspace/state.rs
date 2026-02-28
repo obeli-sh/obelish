@@ -50,7 +50,7 @@ impl WorkspaceState {
 
         let pane = PaneInfo {
             id: pane_id.clone(),
-            pty_id,
+            pty_id: pty_id.clone(),
             pane_type: PaneType::Terminal,
             cwd: None,
         };
@@ -61,6 +61,7 @@ impl WorkspaceState {
             name: name.clone(),
             layout: LayoutNode::Leaf {
                 pane_id: pane_id.clone(),
+                pty_id,
             },
         };
 
@@ -154,8 +155,13 @@ impl WorkspaceState {
 
         for surface in &mut workspace.surfaces {
             if layout_contains_pane(&surface.layout, pane_id) {
-                surface.layout =
-                    split_layout_node(surface.layout.clone(), pane_id, direction, &new_pane_id);
+                surface.layout = split_layout_node(
+                    surface.layout.clone(),
+                    pane_id,
+                    direction,
+                    &new_pane_id,
+                    &new_pane.pty_id,
+                );
                 break;
             }
         }
@@ -261,13 +267,19 @@ impl WorkspaceState {
 
     pub fn update_pane_pty(&mut self, pane_id: &str, new_pty_id: String) {
         if let Some(pane) = self.panes.get_mut(pane_id) {
-            pane.pty_id = new_pty_id;
+            pane.pty_id = new_pty_id.clone();
+        }
+        // Also update pty_id in layout tree so frontend gets the new PTY ID
+        for workspace in &mut self.workspaces {
+            for surface in &mut workspace.surfaces {
+                update_layout_pty_id(&mut surface.layout, pane_id, &new_pty_id);
+            }
         }
     }
 
     fn collect_pane_ids(&mut self, layout: &LayoutNode, pty_ids: &mut Vec<String>) {
         match layout {
-            LayoutNode::Leaf { pane_id } => {
+            LayoutNode::Leaf { pane_id, .. } => {
                 if let Some(pane) = self.panes.remove(pane_id) {
                     pty_ids.push(pane.pty_id);
                 }
@@ -288,7 +300,7 @@ impl Default for WorkspaceState {
 
 fn layout_contains_pane(layout: &LayoutNode, pane_id: &str) -> bool {
     match layout {
-        LayoutNode::Leaf { pane_id: id } => id == pane_id,
+        LayoutNode::Leaf { pane_id: id, .. } => id == pane_id,
         LayoutNode::Split { children, .. } => {
             layout_contains_pane(&children[0], pane_id)
                 || layout_contains_pane(&children[1], pane_id)
@@ -301,14 +313,16 @@ fn split_layout_node(
     target_pane_id: &str,
     direction: SplitDirection,
     new_pane_id: &str,
+    new_pty_id: &str,
 ) -> LayoutNode {
     match layout {
-        LayoutNode::Leaf { ref pane_id } if pane_id == target_pane_id => LayoutNode::Split {
+        LayoutNode::Leaf { ref pane_id, .. } if pane_id == target_pane_id => LayoutNode::Split {
             direction,
             children: Box::new([
                 layout.clone(),
                 LayoutNode::Leaf {
                     pane_id: new_pane_id.to_string(),
+                    pty_id: new_pty_id.to_string(),
                 },
             ]),
             sizes: [0.5, 0.5],
@@ -322,8 +336,14 @@ fn split_layout_node(
             LayoutNode::Split {
                 direction: d,
                 children: Box::new([
-                    split_layout_node(left, target_pane_id, direction.clone(), new_pane_id),
-                    split_layout_node(right, target_pane_id, direction, new_pane_id),
+                    split_layout_node(
+                        left,
+                        target_pane_id,
+                        direction.clone(),
+                        new_pane_id,
+                        new_pty_id,
+                    ),
+                    split_layout_node(right, target_pane_id, direction, new_pane_id, new_pty_id),
                 ]),
                 sizes,
             }
@@ -332,9 +352,25 @@ fn split_layout_node(
     }
 }
 
+fn update_layout_pty_id(layout: &mut LayoutNode, pane_id: &str, new_pty_id: &str) {
+    match layout {
+        LayoutNode::Leaf {
+            pane_id: pid,
+            pty_id,
+        } if pid == pane_id => {
+            *pty_id = new_pty_id.to_string();
+        }
+        LayoutNode::Split { children, .. } => {
+            update_layout_pty_id(&mut children[0], pane_id, new_pty_id);
+            update_layout_pty_id(&mut children[1], pane_id, new_pty_id);
+        }
+        _ => {}
+    }
+}
+
 fn remove_from_layout(layout: &LayoutNode, pane_id: &str) -> Option<LayoutNode> {
     match layout {
-        LayoutNode::Leaf { pane_id: id } if id == pane_id => None,
+        LayoutNode::Leaf { pane_id: id, .. } if id == pane_id => None,
         LayoutNode::Leaf { .. } => Some(layout.clone()),
         LayoutNode::Split { children, .. } => {
             let left_contains = layout_contains_pane(&children[0], pane_id);
@@ -413,7 +449,10 @@ mod tests {
         assert_eq!(ws.surfaces.len(), 1);
         assert_eq!(ws.active_surface_index, 0);
         match &ws.surfaces[0].layout {
-            LayoutNode::Leaf { pane_id } => assert_eq!(pane_id, "pane-1"),
+            LayoutNode::Leaf { pane_id, pty_id } => {
+                assert_eq!(pane_id, "pane-1");
+                assert_eq!(pty_id, "pty-1");
+            }
             _ => panic!("expected leaf layout"),
         }
     }
@@ -542,10 +581,10 @@ mod tests {
             } => {
                 assert!(matches!(direction, SplitDirection::Horizontal));
                 assert!(
-                    matches!(&children[0], LayoutNode::Leaf { pane_id } if pane_id == "pane-1")
+                    matches!(&children[0], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-1" && pty_id == "pty-1")
                 );
                 assert!(
-                    matches!(&children[1], LayoutNode::Leaf { pane_id } if pane_id == "pane-2")
+                    matches!(&children[1], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-2" && pty_id == "pty-2")
                 );
                 assert_eq!(sizes, &[0.5, 0.5]);
             }
@@ -639,7 +678,7 @@ mod tests {
 
         let ws = &state.list_workspaces()[0];
         match &ws.surfaces[0].layout {
-            LayoutNode::Leaf { pane_id } => assert_eq!(pane_id, "pane-2"),
+            LayoutNode::Leaf { pane_id, .. } => assert_eq!(pane_id, "pane-2"),
             _ => panic!("expected layout to collapse back to a leaf"),
         }
     }
@@ -736,7 +775,7 @@ mod tests {
 
         let ws = &state.list_workspaces()[0];
         match &ws.surfaces[0].layout {
-            LayoutNode::Leaf { pane_id } => assert_eq!(pane_id, "pane-4"),
+            LayoutNode::Leaf { pane_id, .. } => assert_eq!(pane_id, "pane-4"),
             _ => panic!("expected single leaf after closing all but one pane"),
         }
     }
@@ -748,15 +787,18 @@ mod tests {
             children: Box::new([
                 LayoutNode::Leaf {
                     pane_id: "pane-1".to_string(),
+                    pty_id: "pty-1".to_string(),
                 },
                 LayoutNode::Split {
                     direction: SplitDirection::Vertical,
                     children: Box::new([
                         LayoutNode::Leaf {
                             pane_id: "pane-2".to_string(),
+                            pty_id: "pty-2".to_string(),
                         },
                         LayoutNode::Leaf {
                             pane_id: "pane-3".to_string(),
+                            pty_id: "pty-3".to_string(),
                         },
                     ]),
                     sizes: [0.3, 0.7],
@@ -769,48 +811,19 @@ mod tests {
         let deserialized: LayoutNode =
             serde_json::from_str(&json).expect("deserialize should succeed");
 
-        // Verify the structure matches after roundtrip
-        match &deserialized {
-            LayoutNode::Split {
-                direction,
-                children,
-                sizes,
-            } => {
-                assert!(matches!(direction, SplitDirection::Horizontal));
-                assert_eq!(sizes, &[0.5, 0.5]);
-                assert!(
-                    matches!(&children[0], LayoutNode::Leaf { pane_id } if pane_id == "pane-1")
-                );
-                match &children[1] {
-                    LayoutNode::Split {
-                        direction,
-                        children,
-                        sizes,
-                    } => {
-                        assert!(matches!(direction, SplitDirection::Vertical));
-                        assert_eq!(sizes, &[0.3, 0.7]);
-                        assert!(
-                            matches!(&children[0], LayoutNode::Leaf { pane_id } if pane_id == "pane-2")
-                        );
-                        assert!(
-                            matches!(&children[1], LayoutNode::Leaf { pane_id } if pane_id == "pane-3")
-                        );
-                    }
-                    _ => panic!("expected nested split"),
-                }
-            }
-            _ => panic!("expected split at root"),
-        }
+        assert_eq!(layout, deserialized);
     }
 
     #[test]
     fn layout_leaf_serialize_format() {
         let layout = LayoutNode::Leaf {
             pane_id: "pane-1".to_string(),
+            pty_id: "pty-1".to_string(),
         };
         let json = serde_json::to_value(&layout).unwrap();
         assert_eq!(json["type"], "leaf");
         assert_eq!(json["paneId"], "pane-1");
+        assert_eq!(json["ptyId"], "pty-1");
     }
 
     #[test]
@@ -820,9 +833,11 @@ mod tests {
             children: Box::new([
                 LayoutNode::Leaf {
                     pane_id: "a".to_string(),
+                    pty_id: "pty-a".to_string(),
                 },
                 LayoutNode::Leaf {
                     pane_id: "b".to_string(),
+                    pty_id: "pty-b".to_string(),
                 },
             ]),
             sizes: [0.5, 0.5],
@@ -947,5 +962,111 @@ mod tests {
         assert!(state.get_pane("pane-1").is_none());
         // Pane from remaining workspace should still exist
         assert!(state.get_pane("pane-2").is_some());
+    }
+
+    #[test]
+    fn update_pane_pty_updates_both_pane_info_and_layout() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-old".to_string(),
+        );
+
+        state.update_pane_pty("pane-1", "pty-new".to_string());
+
+        // PaneInfo should be updated
+        let pane = state.get_pane("pane-1").unwrap();
+        assert_eq!(pane.pty_id, "pty-new");
+
+        // Layout tree leaf should also be updated
+        let ws = &state.list_workspaces()[0];
+        match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pty_id, .. } => assert_eq!(pty_id, "pty-new"),
+            _ => panic!("expected leaf layout"),
+        }
+    }
+
+    #[test]
+    fn update_pane_pty_updates_leaf_in_split_layout() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+        state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        state.update_pane_pty("pane-2", "pty-new".to_string());
+
+        // Verify the split layout has the updated pty_id for pane-2
+        let ws = &state.list_workspaces()[0];
+        match &ws.surfaces[0].layout {
+            LayoutNode::Split { children, .. } => {
+                match &children[1] {
+                    LayoutNode::Leaf { pane_id, pty_id } => {
+                        assert_eq!(pane_id, "pane-2");
+                        assert_eq!(pty_id, "pty-new");
+                    }
+                    _ => panic!("expected leaf"),
+                }
+                // pane-1 should still have original pty_id
+                match &children[0] {
+                    LayoutNode::Leaf { pane_id, pty_id } => {
+                        assert_eq!(pane_id, "pane-1");
+                        assert_eq!(pty_id, "pty-1");
+                    }
+                    _ => panic!("expected leaf"),
+                }
+            }
+            _ => panic!("expected split layout"),
+        }
+    }
+
+    #[test]
+    fn leaf_layout_carries_pty_id_through_split() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let result = state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        // Both leaves in the split should carry their respective pty_ids
+        match &result.workspace.surfaces[0].layout {
+            LayoutNode::Split { children, .. } => {
+                match &children[0] {
+                    LayoutNode::Leaf { pane_id, pty_id } => {
+                        assert_eq!(pane_id, "pane-1");
+                        assert_eq!(pty_id, "pty-1");
+                    }
+                    _ => panic!("expected leaf"),
+                }
+                match &children[1] {
+                    LayoutNode::Leaf { pane_id, pty_id } => {
+                        assert_eq!(pane_id, "pane-2");
+                        assert_eq!(pty_id, "pty-2");
+                    }
+                    _ => panic!("expected leaf"),
+                }
+            }
+            _ => panic!("expected split layout"),
+        }
     }
 }

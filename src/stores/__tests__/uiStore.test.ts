@@ -4,7 +4,7 @@ import { useWorkspaceStore } from '../workspaceStore';
 import type { WorkspaceInfo, LayoutNode, SurfaceInfo } from '../../lib/workspace-types';
 
 function makeLeaf(paneId: string): LayoutNode {
-  return { type: 'leaf', paneId };
+  return { type: 'leaf', paneId, ptyId: `pty-${paneId}` };
 }
 
 function makeSplit(

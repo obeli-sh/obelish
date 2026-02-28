@@ -25,7 +25,7 @@ function makeWorkspace(id: string, name: string): WorkspaceInfo {
   return {
     id,
     name,
-    surfaces: [{ id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId: 'pane-1' } }],
+    surfaces: [{ id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' } }],
     activeSurfaceIndex: 0,
     createdAt: Date.now(),
   };

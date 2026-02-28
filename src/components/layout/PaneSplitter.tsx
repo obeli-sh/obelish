@@ -1,21 +1,19 @@
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { PaneWrapper } from './PaneWrapper';
-import type { LayoutNode, PaneInfo } from '../../lib/workspace-types';
+import type { LayoutNode } from '../../lib/workspace-types';
 
 interface PaneSplitterProps {
   layout: LayoutNode;
   activePaneId: string | null;
   onPaneClick: (paneId: string) => void;
-  panes?: Record<string, PaneInfo>;
 }
 
-export function PaneSplitter({ layout, activePaneId, onPaneClick, panes }: PaneSplitterProps) {
+export function PaneSplitter({ layout, activePaneId, onPaneClick }: PaneSplitterProps) {
   if (layout.type === 'leaf') {
-    const ptyId = panes?.[layout.paneId]?.ptyId ?? layout.paneId;
     return (
       <PaneWrapper
         paneId={layout.paneId}
-        ptyId={ptyId}
+        ptyId={layout.ptyId}
         isActive={activePaneId === layout.paneId}
         onClick={() => onPaneClick(layout.paneId)}
       />
@@ -29,7 +27,6 @@ export function PaneSplitter({ layout, activePaneId, onPaneClick, panes }: PaneS
           layout={layout.children[0]}
           activePaneId={activePaneId}
           onPaneClick={onPaneClick}
-          panes={panes}
         />
       </Panel>
       <Separator />
@@ -38,7 +35,6 @@ export function PaneSplitter({ layout, activePaneId, onPaneClick, panes }: PaneS
           layout={layout.children[1]}
           activePaneId={activePaneId}
           onPaneClick={onPaneClick}
-          panes={panes}
         />
       </Panel>
     </Group>

@@ -316,6 +316,8 @@ pub fn session_restore(
             }
             Err(e) => {
                 tracing::error!("Failed to spawn PTY for pane {}: {e}", pane.id);
+                // Clear the stale pty_id so the frontend knows this pane is broken
+                ws.update_pane_pty(&pane.id, String::new());
             }
         }
     }

@@ -30,6 +30,8 @@ pub enum LayoutNode {
     Leaf {
         #[serde(rename = "paneId")]
         pane_id: String,
+        #[serde(rename = "ptyId")]
+        pty_id: String,
     },
     #[serde(rename = "split")]
     Split {
