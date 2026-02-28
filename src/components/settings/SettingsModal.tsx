@@ -51,6 +51,7 @@ export function SettingsModal({ isOpen, onClose, children }: SettingsModalProps)
       <div
         role="dialog"
         aria-modal="true"
+        aria-label="Settings"
         style={{
           width: '100%',
           maxWidth: 700,

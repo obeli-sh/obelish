@@ -34,6 +34,7 @@ describe('App', () => {
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
     mockInvoke('scrollback_load', () => null);
+    mockInvoke('settings_get', () => Promise.resolve(null));
   });
 
   it('renders AppLayout with loading state initially', () => {

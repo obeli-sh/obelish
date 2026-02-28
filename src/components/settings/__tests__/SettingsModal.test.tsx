@@ -27,6 +27,7 @@ describe('SettingsModal', () => {
     );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', 'Settings');
     expect(screen.getByText('Settings Content')).toBeInTheDocument();
   });
 

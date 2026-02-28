@@ -50,6 +50,8 @@ describe('CommandPalette', () => {
       <CommandPalette isOpen={true} onClose={onClose} commands={testCommands} onExecute={onExecute} />,
     );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', 'Command palette');
     expect(screen.getByTestId('palette-backdrop')).toBeInTheDocument();
   });
 

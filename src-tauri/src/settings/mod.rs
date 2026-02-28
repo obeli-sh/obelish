@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct KeyBinding {
     pub key: String,
-    #[serde(rename = "modKey")]
+    #[serde(rename = "mod")]
     pub mod_key: bool,
     pub shift: bool,
     pub alt: bool,
@@ -70,7 +70,7 @@ impl Default for Settings {
 
         Self {
             keybindings,
-            theme: "system".to_string(),
+            theme: "dark".to_string(),
             terminal_font_family: "monospace".to_string(),
             terminal_font_size: 14,
             scrollback_lines: 10000,
@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn default_settings_has_expected_theme() {
         let settings = Settings::default();
-        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.theme, "dark");
     }
 
     #[test]
@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn keybinding_serializes_mod_key_as_camel_case() {
+    fn keybinding_serializes_mod_key_as_mod() {
         let kb = KeyBinding {
             key: "h".to_string(),
             mod_key: true,
@@ -164,8 +164,9 @@ mod tests {
         };
         let json = serde_json::to_string(&kb).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(parsed.get("modKey").is_some());
+        assert!(parsed.get("mod").is_some());
         assert!(parsed.get("mod_key").is_none());
+        assert!(parsed.get("modKey").is_none());
     }
 
     #[test]

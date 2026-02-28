@@ -31,9 +31,6 @@ export function useKeyboardShortcuts(): void {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const mod = isMac() ? e.metaKey : e.ctrlKey;
-      if (!mod) return;
-
       if (isTerminalPassthrough(e)) return;
 
       const bindings = keybindingsRef.current;

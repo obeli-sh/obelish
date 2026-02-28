@@ -333,4 +333,36 @@ describe('useKeyboardShortcuts', () => {
     unmount();
     addSpy.mockRestore();
   });
+
+  it('updates bindings when settingsStore changes', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
+
+    // Old binding works
+    fireKeydown('n', { ctrlKey: true });
+    expect(mockExecuteN).toHaveBeenCalledTimes(1);
+
+    // Change the binding from Ctrl+N to Ctrl+Shift+N
+    useSettingsStore.setState({
+      keybindings: {
+        ...useSettingsStore.getState().keybindings,
+        'test.action-n': kb('n', true, true),
+      },
+    });
+
+    // Old binding no longer works
+    mockExecuteN.mockClear();
+    fireKeydown('n', { ctrlKey: true });
+    expect(mockExecuteN).not.toHaveBeenCalled();
+
+    // New binding works
+    fireKeydown('n', { ctrlKey: true, shiftKey: true });
+    expect(mockExecuteN).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
 });

@@ -12,6 +12,14 @@ function buildDefaultKeybindings(): Record<string, KeyBinding> {
   return bindings;
 }
 
+export interface RustSettings {
+  keybindings: Record<string, KeyBinding>;
+  theme: string;
+  terminalFontFamily: string;
+  terminalFontSize: number;
+  scrollbackLines: number;
+}
+
 interface SettingsStoreState {
   keybindings: Record<string, KeyBinding>;
   theme: 'dark' | 'light' | 'system';
@@ -24,7 +32,7 @@ interface SettingsStoreState {
   updateTheme: (theme: 'dark' | 'light' | 'system') => void;
   updateFontFamily: (fontFamily: string) => void;
   updateFontSize: (fontSize: number) => void;
-  _syncSettings: (settings: Partial<SettingsStoreState>) => void;
+  _syncSettings: (settings: RustSettings) => void;
 }
 
 export const useSettingsStore = create<SettingsStoreState>((set) => ({
@@ -67,6 +75,12 @@ export const useSettingsStore = create<SettingsStoreState>((set) => ({
   },
 
   _syncSettings: (settings) => {
-    set(settings);
+    set({
+      keybindings: settings.keybindings,
+      theme: settings.theme as 'dark' | 'light' | 'system',
+      terminalFontFamily: settings.terminalFontFamily,
+      terminalFontSize: settings.terminalFontSize,
+      scrollbackLines: settings.scrollbackLines,
+    });
   },
 }));

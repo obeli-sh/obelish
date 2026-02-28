@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Command, CommandCategory } from '../../lib/commands';
-import { bindingToString, detectConflicts, type KeyBinding } from '../../lib/keybinding-utils';
+import { bindingToString, detectConflicts, isMac, type KeyBinding } from '../../lib/keybinding-utils';
 
 interface KeybindingEditorProps {
   commands: Command[];
@@ -39,7 +39,7 @@ export function KeybindingEditor({ commands, keybindings, onUpdate, onReset }: K
 
       const binding: KeyBinding = {
         key: e.key,
-        mod: e.ctrlKey || e.metaKey,
+        mod: isMac() ? e.metaKey : e.ctrlKey,
         shift: e.shiftKey,
         alt: e.altKey,
       };

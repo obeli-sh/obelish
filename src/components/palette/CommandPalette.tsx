@@ -99,6 +99,7 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
       <div
         role="dialog"
         aria-label="Command palette"
+        aria-modal="true"
         onKeyDown={handleKeyDown}
         style={{
           width: '100%',

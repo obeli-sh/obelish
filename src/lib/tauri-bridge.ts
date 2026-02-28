@@ -47,7 +47,7 @@ export const tauriBridge = {
   },
   settings: {
     get: () => invoke<Record<string, unknown>>('settings_get'),
-    update: (settings: Record<string, unknown>) => invoke<void>('settings_update', { settings }),
+    update: (key: string, value: unknown) => invoke<void>('settings_update', { key, value }),
     reset: () => invoke<void>('settings_reset'),
   },
 } as const;

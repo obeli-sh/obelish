@@ -350,18 +350,18 @@ describe('tauriBridge', () => {
   });
 
   describe('settings.update', () => {
-    it('calls invoke with settings_update and partial settings', async () => {
+    it('calls invoke with settings_update key and value', async () => {
       mockInvoke('settings_update', () => undefined);
 
-      await tauriBridge.settings.update({ theme: 'light' });
+      await tauriBridge.settings.update('theme', 'light');
 
-      expect(invoke).toHaveBeenCalledWith('settings_update', { settings: { theme: 'light' } });
+      expect(invoke).toHaveBeenCalledWith('settings_update', { key: 'theme', value: 'light' });
     });
 
     it('propagates errors', async () => {
       mockInvoke('settings_update', () => Promise.reject(new Error('update failed')));
 
-      await expect(tauriBridge.settings.update({ theme: 'dark' })).rejects.toThrow('update failed');
+      await expect(tauriBridge.settings.update('theme', 'dark')).rejects.toThrow('update failed');
     });
   });
 

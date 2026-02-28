@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useUiStore } from '../stores/uiStore';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, type RustSettings } from '../stores/settingsStore';
 import { Sidebar } from './sidebar/Sidebar';
 import { SurfaceTabBar } from './layout/SurfaceTabBar';
 import { PaneSplitter } from './layout/PaneSplitter';
@@ -63,8 +63,15 @@ export function AppLayout() {
 
     const init = async () => {
       try {
-        const list = await tauriBridge.session.restore();
+        const [list, savedSettings] = await Promise.all([
+          tauriBridge.session.restore(),
+          tauriBridge.settings.get().catch(() => null),
+        ]);
         if (cancelled) return;
+
+        if (savedSettings) {
+          useSettingsStore.getState()._syncSettings(savedSettings as unknown as RustSettings);
+        }
 
         for (const ws of list) {
           useWorkspaceStore.getState()._syncWorkspace(ws);
@@ -123,9 +130,9 @@ export function AppLayout() {
     let unlistenSettings: (() => void) | null = null;
 
     const setup = async () => {
-      unlistenSettings = await listen<Record<string, unknown>>('settings-changed', (event) => {
+      unlistenSettings = await listen<RustSettings>('settings-changed', (event) => {
         if (cancelled) return;
-        useSettingsStore.getState()._syncSettings(event.payload as Partial<typeof keybindings>);
+        useSettingsStore.getState()._syncSettings(event.payload);
       });
       if (cancelled) { unlistenSettings?.(); }
     };

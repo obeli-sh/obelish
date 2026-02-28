@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSettingsStore } from '../settingsStore';
+import { useSettingsStore, type RustSettings } from '../settingsStore';
 import { getCommands } from '../../lib/commands';
 import type { KeyBinding } from '../../lib/keybinding-utils';
 
@@ -7,10 +7,20 @@ function kb(key: string, mod = true, shift = false, alt = false): KeyBinding {
   return { key, mod, shift, alt };
 }
 
+function buildDefaultKeybindings(): Record<string, KeyBinding> {
+  const bindings: Record<string, KeyBinding> = {};
+  for (const cmd of getCommands()) {
+    if (cmd.defaultBinding) {
+      bindings[cmd.id] = { ...cmd.defaultBinding };
+    }
+  }
+  return bindings;
+}
+
 describe('settingsStore', () => {
   beforeEach(() => {
-    useSettingsStore.getState().resetAllKeybindings();
     useSettingsStore.setState({
+      keybindings: buildDefaultKeybindings(),
       theme: 'dark',
       terminalFontFamily: 'monospace',
       terminalFontSize: 14,
@@ -119,6 +129,43 @@ describe('settingsStore', () => {
     it('updates terminal font size', () => {
       useSettingsStore.getState().updateFontSize(16);
       expect(useSettingsStore.getState().terminalFontSize).toBe(16);
+    });
+  });
+
+  describe('_syncSettings', () => {
+    it('syncs all data fields from Rust payload', () => {
+      const rustPayload: RustSettings = {
+        keybindings: { 'pane.close': kb('x', true, true) },
+        theme: 'light',
+        terminalFontFamily: 'JetBrains Mono',
+        terminalFontSize: 18,
+        scrollbackLines: 2000,
+      };
+      useSettingsStore.getState()._syncSettings(rustPayload);
+
+      const state = useSettingsStore.getState();
+      expect(state.keybindings).toEqual({ 'pane.close': kb('x', true, true) });
+      expect(state.theme).toBe('light');
+      expect(state.terminalFontFamily).toBe('JetBrains Mono');
+      expect(state.terminalFontSize).toBe(18);
+      expect(state.scrollbackLines).toBe(2000);
+    });
+
+    it('does not remove store action functions', () => {
+      const rustPayload: RustSettings = {
+        keybindings: {},
+        theme: 'dark',
+        terminalFontFamily: 'monospace',
+        terminalFontSize: 14,
+        scrollbackLines: 5000,
+      };
+      useSettingsStore.getState()._syncSettings(rustPayload);
+
+      const state = useSettingsStore.getState();
+      expect(typeof state.updateKeybinding).toBe('function');
+      expect(typeof state.resetKeybinding).toBe('function');
+      expect(typeof state.resetAllKeybindings).toBe('function');
+      expect(typeof state._syncSettings).toBe('function');
     });
   });
 });

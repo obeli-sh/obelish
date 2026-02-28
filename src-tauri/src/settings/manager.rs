@@ -31,23 +31,27 @@ impl SettingsManager {
     }
 
     pub fn update(&self, key: &str, value: serde_json::Value) -> Result<(), PersistenceError> {
-        let mut settings = self
-            .cache
-            .write()
-            .expect("settings cache lock poisoned");
-        apply_dotted_key(&mut settings, key, value)?;
-        self.persist(&settings)?;
-        Ok(())
+        let snapshot = {
+            let mut settings = self
+                .cache
+                .write()
+                .expect("settings cache lock poisoned");
+            apply_dotted_key(&mut settings, key, value)?;
+            settings.clone()
+        };
+        self.persist(&snapshot)
     }
 
     pub fn reset(&self) -> Result<(), PersistenceError> {
-        let mut settings = self
-            .cache
-            .write()
-            .expect("settings cache lock poisoned");
-        *settings = Settings::default();
-        self.persist(&settings)?;
-        Ok(())
+        let snapshot = {
+            let mut settings = self
+                .cache
+                .write()
+                .expect("settings cache lock poisoned");
+            *settings = Settings::default();
+            settings.clone()
+        };
+        self.persist(&snapshot)
     }
 
     fn persist(&self, settings: &Settings) -> Result<(), PersistenceError> {
@@ -175,7 +179,7 @@ mod tests {
         let (_dir, manager) = setup();
         let new_kb = serde_json::json!({
             "key": "d",
-            "modKey": true,
+            "mod": true,
             "shift": false,
             "alt": true,
         });
@@ -195,7 +199,7 @@ mod tests {
         let (_dir, manager) = setup();
         let new_kb = serde_json::json!({
             "key": "x",
-            "modKey": false,
+            "mod": false,
             "shift": true,
             "alt": false,
         });
@@ -237,7 +241,7 @@ mod tests {
 
         // Starts with defaults
         let defaults = manager.get();
-        assert_eq!(defaults.theme, "system");
+        assert_eq!(defaults.theme, "dark");
 
         // Update theme
         manager
@@ -254,7 +258,7 @@ mod tests {
         // Update a keybinding
         let new_kb = serde_json::json!({
             "key": "z",
-            "modKey": true,
+            "mod": true,
             "shift": false,
             "alt": false,
         });
