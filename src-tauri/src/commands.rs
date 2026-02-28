@@ -11,16 +11,20 @@ use crate::workspace::WorkspaceState;
 use base64::Engine as _;
 use obelisk_protocol::{LayoutNode, Notification, SplitDirection, WorkspaceInfo};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 
 pub struct AppState {
     pub pty_manager: PtyManager,
     pub workspace_state: Arc<RwLock<WorkspaceState>>,
-    pub session_manager: SessionManager,
+    pub session_manager: Arc<SessionManager>,
     pub scrollback_storage: ScrollbackStorage,
     pub notification_store: Arc<RwLock<NotificationStore>>,
     pub settings_manager: SettingsManager,
+    pub server_start_time: Instant,
+    pub ipc_socket_path: PathBuf,
 }
 
 impl AppState {
@@ -28,15 +32,60 @@ impl AppState {
         session_manager: SessionManager,
         scrollback_storage: ScrollbackStorage,
         settings_manager: SettingsManager,
+        ipc_socket_path: PathBuf,
     ) -> Self {
         Self {
             pty_manager: PtyManager::new(Arc::new(crate::pty::backend::RealPtyBackend::new())),
             workspace_state: Arc::new(RwLock::new(WorkspaceState::new())),
-            session_manager,
+            session_manager: Arc::new(session_manager),
             scrollback_storage,
             notification_store: Arc::new(RwLock::new(NotificationStore::new(1000))),
             settings_manager,
+            server_start_time: Instant::now(),
+            ipc_socket_path,
         }
+    }
+}
+
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct IpcAppContext {
+    pub workspace_state: Arc<RwLock<WorkspaceState>>,
+    pub notification_store: Arc<RwLock<NotificationStore>>,
+    pub session_manager: Arc<SessionManager>,
+    pub server_start_time: Instant,
+    pub ipc_socket_path: PathBuf,
+}
+
+#[cfg(unix)]
+impl IpcAppContext {
+    pub fn from_app_state(state: &AppState) -> Self {
+        Self {
+            workspace_state: state.workspace_state.clone(),
+            notification_store: state.notification_store.clone(),
+            session_manager: state.session_manager.clone(),
+            server_start_time: state.server_start_time,
+            ipc_socket_path: state.ipc_socket_path.clone(),
+        }
+    }
+}
+
+#[cfg(unix)]
+impl crate::ipc_server::IpcContext for IpcAppContext {
+    fn workspace_state(&self) -> &Arc<RwLock<WorkspaceState>> {
+        &self.workspace_state
+    }
+    fn notification_store(&self) -> &Arc<RwLock<NotificationStore>> {
+        &self.notification_store
+    }
+    fn session_manager(&self) -> &SessionManager {
+        &self.session_manager
+    }
+    fn server_start_time(&self) -> Instant {
+        self.server_start_time
+    }
+    fn socket_path(&self) -> &std::path::Path {
+        &self.ipc_socket_path
     }
 }
 
@@ -421,10 +470,8 @@ pub fn scrollback_save(
 ) -> Result<(), BackendError> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&data)
-        .map_err(|e| {
-            crate::error::PersistenceError::Corrupted {
-                reason: format!("invalid base64: {e}"),
-            }
+        .map_err(|e| crate::error::PersistenceError::Corrupted {
+            reason: format!("invalid base64: {e}"),
         })?;
     state.scrollback_storage.save(&pane_id, &bytes)?;
     Ok(())
@@ -437,7 +484,9 @@ pub fn scrollback_load(
     pane_id: String,
 ) -> Result<Option<String>, BackendError> {
     match state.scrollback_storage.load(&pane_id)? {
-        Some(bytes) => Ok(Some(base64::engine::general_purpose::STANDARD.encode(&bytes))),
+        Some(bytes) => Ok(Some(
+            base64::engine::general_purpose::STANDARD.encode(&bytes),
+        )),
         None => Ok(None),
     }
 }
@@ -454,10 +503,7 @@ pub fn notification_list(state: State<'_, AppState>) -> Result<Vec<Notification>
 
 #[tauri::command]
 #[tracing::instrument(skip(state))]
-pub fn notification_mark_read(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), BackendError> {
+pub fn notification_mark_read(state: State<'_, AppState>, id: String) -> Result<(), BackendError> {
     let mut store = state
         .notification_store
         .write()
@@ -498,10 +544,7 @@ pub fn settings_update(
 
 #[tauri::command]
 #[tracing::instrument(skip(state, app))]
-pub fn settings_reset(
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<(), BackendError> {
+pub fn settings_reset(state: State<'_, AppState>, app: AppHandle) -> Result<(), BackendError> {
     state.settings_manager.reset()?;
     let _ = app.emit("settings-changed", state.settings_manager.get());
     Ok(())
@@ -544,4 +587,147 @@ fn create_default_workspace(
     );
 
     Ok(vec![workspace])
+}
+
+#[cfg(all(test, unix))]
+mod ipc_context_tests {
+    use super::*;
+    use crate::ipc_server::IpcContext;
+    use crate::persistence::fs::FsPersistence;
+    use tempfile::TempDir;
+
+    fn make_app_state(tmp: &TempDir) -> AppState {
+        let backend = Arc::new(FsPersistence::new(tmp.path()).unwrap());
+        let session_manager = SessionManager::new(backend.clone());
+        let scrollback_dir = tmp.path().join("scrollback");
+        std::fs::create_dir_all(&scrollback_dir).unwrap();
+        let scrollback_storage = crate::scrollback::ScrollbackStorage::new(scrollback_dir).unwrap();
+        let settings_backend = Arc::new(FsPersistence::new(tmp.path().join("settings")).unwrap());
+        let settings_manager = SettingsManager::new(settings_backend);
+        let socket_path = tmp.path().join("test.sock");
+        AppState::new(
+            session_manager,
+            scrollback_storage,
+            settings_manager,
+            socket_path,
+        )
+    }
+
+    #[test]
+    fn ipc_app_context_from_app_state_shares_workspace() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+
+        // Create a workspace in AppState
+        {
+            let mut ws = app_state.workspace_state.write().unwrap();
+            ws.create_workspace("Test".to_string(), "p1".to_string(), "pty1".to_string());
+        }
+
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+
+        // IpcAppContext should see the same workspace
+        let ws = ipc_ctx.workspace_state().read().unwrap();
+        assert_eq!(ws.list_workspaces().len(), 1);
+        assert_eq!(ws.list_workspaces()[0].name, "Test");
+    }
+
+    #[test]
+    fn ipc_app_context_from_app_state_shares_notifications() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+
+        // Add a notification in AppState
+        {
+            let mut store = app_state.notification_store.write().unwrap();
+            store.add(obelisk_protocol::Notification {
+                id: "n1".to_string(),
+                pane_id: String::new(),
+                workspace_id: String::new(),
+                osc_type: 9,
+                title: "Hello".to_string(),
+                body: None,
+                timestamp: 0,
+                read: false,
+            });
+        }
+
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+
+        // IpcAppContext should see the same notification
+        let store = ipc_ctx.notification_store().read().unwrap();
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(store.list()[0].title, "Hello");
+    }
+
+    #[test]
+    fn ipc_app_context_returns_correct_socket_path() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+
+        assert_eq!(ipc_ctx.socket_path(), tmp.path().join("test.sock"));
+    }
+
+    #[test]
+    fn ipc_app_context_returns_server_start_time() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        let before = Instant::now();
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        // start_time should be very close to now (set during AppState::new)
+        let elapsed = before.elapsed();
+        let ctx_elapsed = ipc_ctx.server_start_time().elapsed();
+        assert!(ctx_elapsed >= elapsed || ctx_elapsed.as_millis() < 1000);
+    }
+
+    #[test]
+    fn ipc_app_context_session_manager_works() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+
+        // Session manager should be functional
+        assert!(!ipc_ctx.session_manager().is_dirty());
+        ipc_ctx.session_manager().mark_dirty();
+        assert!(ipc_ctx.session_manager().is_dirty());
+        // Should be visible through the shared Arc
+        assert!(app_state.session_manager.is_dirty());
+    }
+
+    #[tokio::test]
+    async fn ipc_server_starts_with_app_context() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        let socket_path = tmp.path().join("ipc-test.sock");
+        let mut ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        ipc_ctx.ipc_socket_path = socket_path.clone();
+
+        let server = crate::ipc_server::IpcServer::start(ipc_ctx, socket_path.clone())
+            .await
+            .unwrap();
+        assert!(socket_path.exists());
+
+        // Connect and send a workspace.list request
+        let stream = tokio::net::UnixStream::connect(&socket_path).await.unwrap();
+        let (mut reader, mut writer) = tokio::io::split(stream);
+
+        let request = obelisk_protocol::rpc::RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: obelisk_protocol::methods::METHOD_WORKSPACE_LIST.to_string(),
+            params: None,
+            id: serde_json::json!(1),
+        };
+        obelisk_protocol::framing::write_request(&mut writer, &request)
+            .await
+            .unwrap();
+        let response = obelisk_protocol::framing::read_response(&mut reader)
+            .await
+            .unwrap();
+        assert!(response.error.is_none());
+        assert_eq!(response.result, Some(serde_json::json!([])));
+
+        server.stop().await.unwrap();
+        assert!(!socket_path.exists());
+    }
 }

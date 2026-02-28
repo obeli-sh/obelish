@@ -1,5 +1,7 @@
 pub mod commands;
 pub mod error;
+#[cfg(unix)]
+pub mod ipc_server;
 pub mod metadata;
 pub mod notifications;
 pub mod persistence;
@@ -17,6 +19,14 @@ use persistence::session::SessionManager;
 use settings::manager::SettingsManager;
 use tauri::Manager;
 
+#[cfg(unix)]
+fn compute_socket_path() -> std::path::PathBuf {
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+        .or_else(|_| std::env::var("TMPDIR"))
+        .unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(runtime_dir).join(format!("obelisk-{}.sock", std::process::id()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -30,17 +40,49 @@ pub fn run() {
                 FsPersistence::new(&app_data_dir).expect("failed to create persistence backend"),
             );
             let session_manager = SessionManager::new(backend.clone());
-            let scrollback_storage = scrollback::ScrollbackStorage::new(
-                app_data_dir.join("scrollback"),
-            )
-            .expect("failed to create scrollback storage");
+            let scrollback_storage =
+                scrollback::ScrollbackStorage::new(app_data_dir.join("scrollback"))
+                    .expect("failed to create scrollback storage");
             let settings_backend = Arc::new(
                 FsPersistence::new(app_data_dir.join("settings"))
                     .expect("failed to create settings persistence backend"),
             );
             let settings_manager = SettingsManager::new(settings_backend);
-            let app_state = AppState::new(session_manager, scrollback_storage, settings_manager);
+
+            #[cfg(unix)]
+            let socket_path = compute_socket_path();
+            #[cfg(not(unix))]
+            let socket_path = std::path::PathBuf::new();
+
+            let app_state = AppState::new(
+                session_manager,
+                scrollback_storage,
+                settings_manager,
+                socket_path.clone(),
+            );
             app.manage(app_state);
+
+            // Start IPC server on Unix platforms
+            #[cfg(unix)]
+            {
+                let state = app.state::<AppState>();
+                let ipc_context = commands::IpcAppContext::from_app_state(&state);
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match ipc_server::IpcServer::start(ipc_context, socket_path).await {
+                        Ok(server) => {
+                            tracing::info!(
+                                "IPC server started at {}",
+                                server.socket_path().display()
+                            );
+                            app_handle.manage(server);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to start IPC server: {e}");
+                        }
+                    }
+                });
+            }
 
             // Start autosave timer (30s interval)
             let app_handle = app.handle().clone();
@@ -94,6 +136,18 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                // Stop IPC server
+                #[cfg(unix)]
+                {
+                    if let Some(server) = app_handle.try_state::<ipc_server::IpcServer>() {
+                        tauri::async_runtime::block_on(async {
+                            if let Err(e) = server.stop().await {
+                                tracing::error!("Failed to stop IPC server: {e}");
+                            }
+                        });
+                    }
+                }
+
                 let state = app_handle.state::<AppState>();
                 let session = {
                     let ws = state

@@ -381,7 +381,12 @@ mod tests {
     fn rapid_sequential_notifications() {
         let mut parser = OscParser::new();
         let single = b"\x1b]9;msg\x07";
-        let input: Vec<u8> = single.iter().copied().cycle().take(single.len() * 100).collect();
+        let input: Vec<u8> = single
+            .iter()
+            .copied()
+            .cycle()
+            .take(single.len() * 100)
+            .collect();
         let (forwarded, notifications) = parser.feed(&input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 100);

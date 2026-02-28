@@ -252,6 +252,18 @@ fn ci_workflow_supports_workflow_call() {
     );
 }
 
+// --- Dependency tests ---
+
+#[test]
+fn libc_dependency_exists() {
+    let cargo = read_toml(&workspace_root().join("src-tauri/Cargo.toml"));
+    let libc_dep = &cargo["target"]["cfg(unix)"]["dependencies"]["libc"];
+    assert!(
+        libc_dep.is_str() || libc_dep.is_table(),
+        "src-tauri/Cargo.toml should have libc as a unix dependency"
+    );
+}
+
 // --- Justfile tests ---
 
 #[test]

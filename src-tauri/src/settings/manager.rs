@@ -32,10 +32,7 @@ impl SettingsManager {
 
     pub fn update(&self, key: &str, value: serde_json::Value) -> Result<(), PersistenceError> {
         let snapshot = {
-            let mut settings = self
-                .cache
-                .write()
-                .expect("settings cache lock poisoned");
+            let mut settings = self.cache.write().expect("settings cache lock poisoned");
             apply_dotted_key(&mut settings, key, value)?;
             settings.clone()
         };
@@ -44,10 +41,7 @@ impl SettingsManager {
 
     pub fn reset(&self) -> Result<(), PersistenceError> {
         let snapshot = {
-            let mut settings = self
-                .cache
-                .write()
-                .expect("settings cache lock poisoned");
+            let mut settings = self.cache.write().expect("settings cache lock poisoned");
             *settings = Settings::default();
             settings.clone()
         };
@@ -68,11 +62,10 @@ fn apply_dotted_key(
 ) -> Result<(), PersistenceError> {
     match key {
         "theme" => {
-            settings.theme = serde_json::from_value(value).map_err(|e| {
-                PersistenceError::Corrupted {
+            settings.theme =
+                serde_json::from_value(value).map_err(|e| PersistenceError::Corrupted {
                     reason: format!("invalid value for theme: {e}"),
-                }
-            })?;
+                })?;
         }
         "terminalFontFamily" => {
             settings.terminal_font_family =
@@ -94,10 +87,8 @@ fn apply_dotted_key(
         }
         _ if key.starts_with("keybindings.") => {
             let binding_name = &key["keybindings.".len()..];
-            let kb = serde_json::from_value(value).map_err(|e| {
-                PersistenceError::Corrupted {
-                    reason: format!("invalid keybinding value for {binding_name}: {e}"),
-                }
+            let kb = serde_json::from_value(value).map_err(|e| PersistenceError::Corrupted {
+                reason: format!("invalid keybinding value for {binding_name}: {e}"),
             })?;
             settings.keybindings.insert(binding_name.to_string(), kb);
         }
@@ -134,9 +125,7 @@ mod tests {
     #[test]
     fn update_persists_theme_change() {
         let (_dir, manager) = setup();
-        manager
-            .update("theme", serde_json::json!("dark"))
-            .unwrap();
+        manager.update("theme", serde_json::json!("dark")).unwrap();
         let settings = manager.get();
         assert_eq!(settings.theme, "dark");
     }
@@ -145,10 +134,7 @@ mod tests {
     fn update_persists_font_family() {
         let (_dir, manager) = setup();
         manager
-            .update(
-                "terminalFontFamily",
-                serde_json::json!("JetBrains Mono"),
-            )
+            .update("terminalFontFamily", serde_json::json!("JetBrains Mono"))
             .unwrap();
         let settings = manager.get();
         assert_eq!(settings.terminal_font_family, "JetBrains Mono");
@@ -216,9 +202,7 @@ mod tests {
     #[test]
     fn reset_restores_defaults() {
         let (_dir, manager) = setup();
-        manager
-            .update("theme", serde_json::json!("dark"))
-            .unwrap();
+        manager.update("theme", serde_json::json!("dark")).unwrap();
         assert_eq!(manager.get().theme, "dark");
 
         manager.reset().unwrap();
@@ -228,9 +212,7 @@ mod tests {
     #[test]
     fn get_after_update_returns_updated_value() {
         let (_dir, manager) = setup();
-        manager
-            .update("theme", serde_json::json!("light"))
-            .unwrap();
+        manager.update("theme", serde_json::json!("light")).unwrap();
         let settings = manager.get();
         assert_eq!(settings.theme, "light");
     }
@@ -244,9 +226,7 @@ mod tests {
         assert_eq!(defaults.theme, "dark");
 
         // Update theme
-        manager
-            .update("theme", serde_json::json!("dark"))
-            .unwrap();
+        manager.update("theme", serde_json::json!("dark")).unwrap();
         assert_eq!(manager.get().theme, "dark");
 
         // Update font size
@@ -282,9 +262,7 @@ mod tests {
         // First manager instance: update settings
         {
             let manager = SettingsManager::new(backend.clone());
-            manager
-                .update("theme", serde_json::json!("dark"))
-                .unwrap();
+            manager.update("theme", serde_json::json!("dark")).unwrap();
         }
 
         // Second manager instance: should load persisted settings
@@ -302,9 +280,7 @@ mod tests {
         // First manager: update then reset
         {
             let manager = SettingsManager::new(backend.clone());
-            manager
-                .update("theme", serde_json::json!("dark"))
-                .unwrap();
+            manager.update("theme", serde_json::json!("dark")).unwrap();
             manager.reset().unwrap();
         }
 

@@ -1,3 +1,8 @@
+pub mod error;
+pub mod framing;
+pub mod methods;
+pub mod rpc;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

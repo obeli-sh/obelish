@@ -217,13 +217,8 @@ impl WorkspaceState {
 
         for surface in &mut workspace.surfaces {
             if layout_contains_pane(&surface.layout, pane_id) {
-                surface.layout = split_layout_node(
-                    surface.layout.clone(),
-                    pane_id,
-                    direction,
-                    &new_pane_id,
-                    "",
-                );
+                surface.layout =
+                    split_layout_node(surface.layout.clone(), pane_id, direction, &new_pane_id, "");
                 break;
             }
         }
@@ -337,6 +332,18 @@ impl WorkspaceState {
                 update_layout_pty_id(&mut surface.layout, pane_id, &new_pty_id);
             }
         }
+    }
+
+    pub fn focus_workspace(&mut self, id: &str) -> Result<(), WorkspaceError> {
+        if !self.workspaces.iter().any(|w| w.id == id) {
+            return Err(WorkspaceError::NotFound { id: id.to_string() });
+        }
+        self.active_workspace_id = Some(id.to_string());
+        Ok(())
+    }
+
+    pub fn active_workspace_id(&self) -> Option<&str> {
+        self.active_workspace_id.as_deref()
     }
 
     fn collect_pane_ids(&mut self, layout: &LayoutNode, pty_ids: &mut Vec<String>) {
@@ -934,7 +941,9 @@ mod tests {
         assert!(!result.workspace_closed);
 
         // Terminal pane should still exist
-        let terminal_pane = state.get_pane("pane-1").expect("terminal pane should still exist");
+        let terminal_pane = state
+            .get_pane("pane-1")
+            .expect("terminal pane should still exist");
         assert_eq!(terminal_pane.pty_id, "pty-1");
     }
 
@@ -1311,6 +1320,59 @@ mod tests {
             }
             _ => panic!("expected split layout"),
         }
+    }
+
+    #[test]
+    fn focus_workspace_sets_active_id() {
+        let mut state = WorkspaceState::new();
+        let ws1 = state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+        let ws2 = state.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+
+        // After creating ws2, active should be ws2
+        assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
+
+        // Focus ws1
+        state.focus_workspace(&ws1.id).unwrap();
+        assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
+    }
+
+    #[test]
+    fn focus_workspace_nonexistent_returns_not_found() {
+        let mut state = WorkspaceState::new();
+        state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+
+        let result = state.focus_workspace("nonexistent-id");
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::NotFound { .. }
+        ));
+    }
+
+    #[test]
+    fn active_workspace_id_after_create_focus_close() {
+        let mut state = WorkspaceState::new();
+
+        // Initially no active workspace
+        assert_eq!(state.active_workspace_id(), None);
+
+        // Create ws1 → active = ws1
+        let ws1 = state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+        assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
+
+        // Create ws2 → active = ws2
+        let ws2 = state.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+        assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
+
+        // Focus ws1 → active = ws1
+        state.focus_workspace(&ws1.id).unwrap();
+        assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
+
+        // Close ws1 → active should change (close_workspace handles this)
+        state.close_workspace(&ws1.id).unwrap();
+        // After closing the active workspace, it should switch to another
+        assert!(state.active_workspace_id().is_some());
+        assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
     }
 
     #[test]

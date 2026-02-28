@@ -29,8 +29,7 @@ impl ScrollbackStorage {
 
     pub fn save(&self, pane_id: &str, data: &[u8]) -> Result<(), PersistenceError> {
         let path = self.file_path(pane_id)?;
-        let compressed = zstd::encode_all(data, 3)
-            .map_err(PersistenceError::Io)?;
+        let compressed = zstd::encode_all(data, 3).map_err(PersistenceError::Io)?;
         fs::write(&path, &compressed)?;
         Ok(())
     }
@@ -39,8 +38,7 @@ impl ScrollbackStorage {
         let path = self.file_path(pane_id)?;
         match fs::read(&path) {
             Ok(compressed) => {
-                let data = zstd::decode_all(compressed.as_slice())
-                    .map_err(PersistenceError::Io)?;
+                let data = zstd::decode_all(compressed.as_slice()).map_err(PersistenceError::Io)?;
                 Ok(Some(data))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),

@@ -118,10 +118,7 @@ mod tests {
             let key = args.join(" ");
             match self.responses.get(&key) {
                 Some(Ok(output)) => Ok(output.clone()),
-                Some(Err(_)) => Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "mock error",
-                )),
+                Some(Err(_)) => Err(std::io::Error::new(std::io::ErrorKind::Other, "mock error")),
                 None => Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("no mock for args: {key}"),
@@ -181,10 +178,7 @@ mod tests {
     fn get_git_info_from_mock_runner() {
         let mut runner = MockRunner::new();
         runner.on("rev-parse --is-inside-work-tree", Ok("true\n".to_string()));
-        runner.on(
-            "symbolic-ref --short HEAD",
-            Ok("main\n".to_string()),
-        );
+        runner.on("symbolic-ref --short HEAD", Ok("main\n".to_string()));
         runner.on("status --porcelain", Ok(" M src/main.rs\n".to_string()));
         runner.on(
             "rev-list --count --left-right @{upstream}...HEAD",
@@ -203,7 +197,10 @@ mod tests {
         let mut runner = MockRunner::new();
         runner.on(
             "rev-parse --is-inside-work-tree",
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "not a git repo")),
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "not a git repo",
+            )),
         );
 
         assert!(get_git_info(&runner, "/not/a/repo").is_none());
@@ -220,7 +217,10 @@ mod tests {
         runner.on("status --porcelain", Ok("".to_string()));
         runner.on(
             "rev-list --count --left-right @{upstream}...HEAD",
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "no upstream")),
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "no upstream",
+            )),
         );
 
         let info = get_git_info(&runner, "/fake/path").unwrap();
