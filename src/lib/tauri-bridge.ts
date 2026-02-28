@@ -29,6 +29,8 @@ export const tauriBridge = {
     split: (paneId: string, direction: SplitDirection, shell?: string) =>
       invoke<WorkspaceInfo>('pane_split', { paneId, direction, shell }),
     close: (paneId: string) => invoke<void>('pane_close', { paneId }),
+    openBrowser: (paneId: string, url: string, direction: SplitDirection) =>
+      invoke<WorkspaceInfo>('pane_open_browser', { paneId, url, direction }),
   },
   session: {
     save: () => invoke<void>('session_save'),

@@ -148,6 +148,34 @@ describe('tauriBridge', () => {
     });
   });
 
+  describe('pane.openBrowser', () => {
+    it('calls invoke with pane_open_browser and args', async () => {
+      const mockResult = {
+        id: 'ws-1',
+        name: 'Workspace',
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 1000,
+      };
+      mockInvoke('pane_open_browser', () => mockResult);
+
+      const result = await tauriBridge.pane.openBrowser('pane-1', 'https://example.com', 'horizontal');
+
+      expect(invoke).toHaveBeenCalledWith('pane_open_browser', {
+        paneId: 'pane-1',
+        url: 'https://example.com',
+        direction: 'horizontal',
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('pane_open_browser', () => Promise.reject(new Error('open failed')));
+
+      await expect(tauriBridge.pane.openBrowser('pane-1', 'https://example.com', 'horizontal')).rejects.toThrow('open failed');
+    });
+  });
+
   describe('pane.close', () => {
     it('calls invoke with pane_close and paneId', async () => {
       mockInvoke('pane_close', () => undefined);

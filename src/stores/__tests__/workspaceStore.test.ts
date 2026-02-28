@@ -25,6 +25,7 @@ describe('workspaceStore', () => {
     useWorkspaceStore.setState({
       workspaces: {},
       activeWorkspaceId: null,
+      browserPaneUrls: {},
     });
   });
 
@@ -134,6 +135,32 @@ describe('workspaceStore', () => {
       useWorkspaceStore.getState()._setActiveWorkspace('ws-1');
 
       expect(useWorkspaceStore.getState().getActiveSurface()).toEqual(surface2);
+    });
+  });
+
+  describe('browserPaneUrls', () => {
+    it('starts with empty browserPaneUrls', () => {
+      expect(useWorkspaceStore.getState().browserPaneUrls).toEqual({});
+    });
+
+    it('_setBrowserPaneUrl stores url for a pane', () => {
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://example.com');
+      expect(useWorkspaceStore.getState().browserPaneUrls['pane-1']).toBe('https://example.com');
+    });
+
+    it('_setBrowserPaneUrl overwrites existing url', () => {
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://example.com');
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://other.com');
+      expect(useWorkspaceStore.getState().browserPaneUrls['pane-1']).toBe('https://other.com');
+    });
+
+    it('_setBrowserPaneUrl stores urls for multiple panes', () => {
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://example.com');
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-2', 'https://other.com');
+      expect(useWorkspaceStore.getState().browserPaneUrls).toEqual({
+        'pane-1': 'https://example.com',
+        'pane-2': 'https://other.com',
+      });
     });
   });
 

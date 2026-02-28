@@ -24,6 +24,14 @@ export function useAppShortcuts(): void {
         },
       },
       {
+        key: 'b',
+        shift: true,
+        action: () => {
+          const paneId = useUiStore.getState().focusedPaneId;
+          if (paneId) tauriBridge.pane.openBrowser(paneId, 'about:blank', 'horizontal');
+        },
+      },
+      {
         key: 'w',
         action: () => {
           const paneId = useUiStore.getState().focusedPaneId;

@@ -70,6 +70,7 @@ pub fn run() {
             commands::workspace_close,
             commands::workspace_list,
             commands::pane_split,
+            commands::pane_open_browser,
             commands::pane_close,
             commands::session_save,
             commands::session_restore,

@@ -53,6 +53,7 @@ impl WorkspaceState {
             pty_id: pty_id.clone(),
             pane_type: PaneType::Terminal,
             cwd: None,
+            url: None,
         };
         self.panes.insert(pane_id.clone(), pane);
 
@@ -138,6 +139,7 @@ impl WorkspaceState {
             pty_id: new_pty_id,
             pane_type: PaneType::Terminal,
             cwd: None,
+            url: None,
         };
         self.panes.insert(new_pane_id.clone(), new_pane.clone());
 
@@ -161,6 +163,59 @@ impl WorkspaceState {
                     direction,
                     &new_pane_id,
                     &new_pane.pty_id,
+                );
+                break;
+            }
+        }
+
+        Ok(PaneSplitResult {
+            workspace: workspace.clone(),
+            new_pane,
+        })
+    }
+
+    pub fn open_browser_pane(
+        &mut self,
+        pane_id: &str,
+        direction: SplitDirection,
+        new_pane_id: String,
+        url: String,
+    ) -> Result<PaneSplitResult, WorkspaceError> {
+        if !self.panes.contains_key(pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            });
+        }
+
+        let new_pane = PaneInfo {
+            id: new_pane_id.clone(),
+            pty_id: String::new(),
+            pane_type: PaneType::Browser,
+            cwd: None,
+            url: Some(url),
+        };
+        self.panes.insert(new_pane_id.clone(), new_pane.clone());
+
+        let workspace = self
+            .workspaces
+            .iter_mut()
+            .find(|w| {
+                w.surfaces
+                    .iter()
+                    .any(|s| layout_contains_pane(&s.layout, pane_id))
+            })
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+
+        for surface in &mut workspace.surfaces {
+            if layout_contains_pane(&surface.layout, pane_id) {
+                surface.layout = split_layout_node(
+                    surface.layout.clone(),
+                    pane_id,
+                    direction,
+                    &new_pane_id,
+                    "",
                 );
                 break;
             }
@@ -778,6 +833,160 @@ mod tests {
             LayoutNode::Leaf { pane_id, .. } => assert_eq!(pane_id, "pane-4"),
             _ => panic!("expected single leaf after closing all but one pane"),
         }
+    }
+
+    #[test]
+    fn open_browser_pane_creates_split_with_browser_type() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let result = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "https://example.com".to_string(),
+            )
+            .unwrap();
+
+        // Should create a split layout
+        match &result.workspace.surfaces[0].layout {
+            LayoutNode::Split {
+                direction,
+                children,
+                sizes,
+            } => {
+                assert!(matches!(direction, SplitDirection::Horizontal));
+                // Original pane stays as-is
+                assert!(
+                    matches!(&children[0], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-1" && pty_id == "pty-1")
+                );
+                // Browser pane has empty pty_id
+                assert!(
+                    matches!(&children[1], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-2" && pty_id.is_empty())
+                );
+                assert_eq!(sizes, &[0.5, 0.5]);
+            }
+            _ => panic!("expected split layout"),
+        }
+
+        // The new pane should have Browser type
+        let pane = state.get_pane("pane-2").expect("browser pane should exist");
+        assert!(matches!(pane.pane_type, PaneType::Browser));
+    }
+
+    #[test]
+    fn open_browser_pane_stores_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Vertical,
+                "pane-2".to_string(),
+                "https://example.com".to_string(),
+            )
+            .unwrap();
+
+        let pane = state.get_pane("pane-2").expect("browser pane should exist");
+        assert_eq!(pane.url, Some("https://example.com".to_string()));
+        assert_eq!(pane.pty_id, "");
+    }
+
+    #[test]
+    fn close_browser_pane_does_not_affect_ptys() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "https://example.com".to_string(),
+            )
+            .unwrap();
+
+        let result = state.close_pane("browser-1").unwrap();
+
+        // Browser pane returns empty pty_id (no PTY to kill)
+        assert_eq!(result.pty_id, "");
+        assert!(!result.workspace_closed);
+
+        // Terminal pane should still exist
+        let terminal_pane = state.get_pane("pane-1").expect("terminal pane should still exist");
+        assert_eq!(terminal_pane.pty_id, "pty-1");
+    }
+
+    #[test]
+    fn workspace_with_mixed_panes_closes_correctly() {
+        let mut state = new_state();
+        let ws1 = state.create_workspace(
+            "Mixed".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "https://example.com".to_string(),
+            )
+            .unwrap();
+
+        // Need a second workspace so we can close this one
+        state.create_workspace(
+            "Other".to_string(),
+            "pane-3".to_string(),
+            "pty-3".to_string(),
+        );
+
+        let pty_ids = state.close_workspace(&ws1.id).unwrap();
+
+        // Should only contain the terminal PTY, not the browser's empty pty_id
+        // (close_workspace collects all pty_ids including empty ones,
+        //  the command handler should filter empty ones)
+        assert!(pty_ids.contains(&"pty-1".to_string()));
+        assert!(pty_ids.contains(&String::new()));
+
+        // Both panes should be cleaned up
+        assert!(state.get_pane("pane-1").is_none());
+        assert!(state.get_pane("browser-1").is_none());
+    }
+
+    #[test]
+    fn open_browser_pane_on_nonexistent_pane_returns_error() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state
+            .open_browser_pane(
+                "nonexistent",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "https://example.com".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::PaneNotFound { id } if id == "nonexistent"));
     }
 
     #[test]

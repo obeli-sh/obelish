@@ -4,17 +4,20 @@ import type { WorkspaceInfo, SurfaceInfo, LayoutNode } from '../lib/workspace-ty
 interface WorkspaceStoreState {
   workspaces: Record<string, WorkspaceInfo>;
   activeWorkspaceId: string | null;
+  browserPaneUrls: Record<string, string>;
   getActiveWorkspace: () => WorkspaceInfo | null;
   getActiveSurface: () => SurfaceInfo | null;
   getActiveLayout: () => LayoutNode | null;
   _syncWorkspace: (workspace: WorkspaceInfo) => void;
   _removeWorkspace: (id: string) => void;
   _setActiveWorkspace: (id: string) => void;
+  _setBrowserPaneUrl: (paneId: string, url: string) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   workspaces: {},
   activeWorkspaceId: null,
+  browserPaneUrls: {},
 
   getActiveWorkspace: () => {
     const { workspaces, activeWorkspaceId } = get();
@@ -54,5 +57,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
 
   _setActiveWorkspace: (id) => {
     set({ activeWorkspaceId: id });
+  },
+
+  _setBrowserPaneUrl: (paneId, url) => {
+    set((state) => ({
+      browserPaneUrls: { ...state.browserPaneUrls, [paneId]: url },
+    }));
   },
 }));

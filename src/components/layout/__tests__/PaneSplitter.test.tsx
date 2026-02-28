@@ -9,8 +9,14 @@ vi.mock('../../terminal/TerminalPane', () => ({
     <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
   )),
 }));
+vi.mock('../../browser/BrowserPane', () => ({
+  BrowserPane: vi.fn(({ paneId, url, isActive }: { paneId: string; url: string; isActive: boolean }) => (
+    <div data-testid={`browser-pane-${paneId}`} data-url={url} data-active={isActive} />
+  )),
+}));
 
 import { PaneSplitter } from '../PaneSplitter';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
 
 describe('PaneSplitter', () => {
   it('renders single leaf as PaneWrapper with correct ptyId', () => {
@@ -167,5 +173,70 @@ describe('PaneSplitter', () => {
 
     const terminal = screen.getByTestId('terminal-pane-pane-abc');
     expect(terminal).toHaveAttribute('data-pty-id', 'pty-xyz');
+  });
+
+  it('renders BrowserPane when ptyId is empty string', () => {
+    useWorkspaceStore.setState({
+      browserPaneUrls: { 'pane-browser': 'https://example.com' },
+    });
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-browser', ptyId: '' };
+
+    render(
+      <PaneSplitter
+        layout={layout}
+        activePaneId="pane-browser"
+        onPaneClick={vi.fn()}
+      />
+    );
+
+    const browser = screen.getByTestId('browser-pane-pane-browser');
+    expect(browser).toBeInTheDocument();
+    expect(browser).toHaveAttribute('data-url', 'https://example.com');
+    expect(browser).toHaveAttribute('data-active', 'true');
+    expect(screen.queryByTestId('terminal-pane-pane-browser')).not.toBeInTheDocument();
+  });
+
+  it('renders BrowserPane with about:blank when no url stored', () => {
+    useWorkspaceStore.setState({
+      browserPaneUrls: {},
+    });
+    const layout: LayoutNode = { type: 'leaf', paneId: 'pane-browser', ptyId: '' };
+
+    render(
+      <PaneSplitter
+        layout={layout}
+        activePaneId={null}
+        onPaneClick={vi.fn()}
+      />
+    );
+
+    const browser = screen.getByTestId('browser-pane-pane-browser');
+    expect(browser).toHaveAttribute('data-url', 'about:blank');
+  });
+
+  it('renders mixed terminal and browser panes in a split', () => {
+    useWorkspaceStore.setState({
+      browserPaneUrls: { 'pane-2': 'https://example.com' },
+    });
+    const layout: LayoutNode = {
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+        { type: 'leaf', paneId: 'pane-2', ptyId: '' },
+      ],
+      sizes: [0.5, 0.5],
+    };
+
+    render(
+      <PaneSplitter
+        layout={layout}
+        activePaneId={null}
+        onPaneClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
+    expect(screen.getByTestId('browser-pane-pane-2')).toBeInTheDocument();
   });
 });

@@ -24,6 +24,15 @@ vi.mock('../../lib/tauri-bridge', () => ({
         Promise.resolve({ paneId: 'new-pane', ptyId: 'new-pty' }),
       ),
       close: vi.fn(() => Promise.resolve()),
+      openBrowser: vi.fn(() =>
+        Promise.resolve({
+          id: 'ws-1',
+          name: 'Workspace 1',
+          surfaces: [],
+          activeSurfaceIndex: 0,
+          createdAt: 0,
+        }),
+      ),
     },
     pty: {
       spawn: vi.fn(() => Promise.resolve({ ptyId: 'pty-1' })),
@@ -66,6 +75,7 @@ describe('useAppShortcuts', () => {
 
     vi.mocked(tauriBridge.pane.split).mockClear();
     vi.mocked(tauriBridge.pane.close).mockClear();
+    vi.mocked(tauriBridge.pane.openBrowser).mockClear();
     vi.mocked(tauriBridge.workspace.create).mockClear();
   });
 
@@ -161,6 +171,26 @@ describe('useAppShortcuts', () => {
 
     expect(spy).toHaveBeenCalledWith('right');
     spy.mockRestore();
+    unmount();
+  });
+
+  it('Ctrl+Shift+B calls pane.openBrowser with about:blank', () => {
+    const { unmount } = renderHook(() => useAppShortcuts());
+
+    fireKeydown('b', { ctrlKey: true, shiftKey: true });
+
+    expect(tauriBridge.pane.openBrowser).toHaveBeenCalledWith('pane-1', 'about:blank', 'horizontal');
+    unmount();
+  });
+
+  it('Ctrl+Shift+B does nothing when no focused pane', () => {
+    useUiStore.setState({ focusedPaneId: null });
+
+    const { unmount } = renderHook(() => useAppShortcuts());
+
+    fireKeydown('b', { ctrlKey: true, shiftKey: true });
+
+    expect(tauriBridge.pane.openBrowser).not.toHaveBeenCalled();
     unmount();
   });
 

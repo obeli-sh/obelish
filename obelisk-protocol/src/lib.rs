@@ -57,6 +57,7 @@ pub struct PaneInfo {
     pub pty_id: String,
     pub pane_type: PaneType,
     pub cwd: Option<String>,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

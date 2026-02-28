@@ -163,7 +163,9 @@ pub fn workspace_close(
     };
 
     for pty_id in pty_ids {
-        let _ = state.pty_manager.kill(&pty_id);
+        if !pty_id.is_empty() {
+            let _ = state.pty_manager.kill(&pty_id);
+        }
     }
 
     for pane_id in &pane_ids {
@@ -238,6 +240,33 @@ pub fn pane_split(
 
 #[tauri::command]
 #[tracing::instrument(skip(state, app))]
+pub fn pane_open_browser(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    pane_id: String,
+    url: String,
+    direction: SplitDirection,
+) -> Result<WorkspaceInfo, BackendError> {
+    let new_pane_id = uuid::Uuid::new_v4().to_string();
+
+    let mut ws = state
+        .workspace_state
+        .write()
+        .expect("workspace state lock poisoned");
+    let result = ws.open_browser_pane(&pane_id, direction, new_pane_id, url)?;
+
+    state.session_manager.mark_dirty();
+
+    let _ = app.emit(
+        "workspace-changed",
+        serde_json::json!({ "workspaceId": result.workspace.id, "workspace": result.workspace }),
+    );
+
+    Ok(result.workspace)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state, app))]
 pub fn pane_close(
     state: State<'_, AppState>,
     app: AppHandle,
@@ -251,7 +280,9 @@ pub fn pane_close(
         ws.close_pane(&pane_id)?
     };
 
-    let _ = state.pty_manager.kill(&result.pty_id);
+    if !result.pty_id.is_empty() {
+        let _ = state.pty_manager.kill(&result.pty_id);
+    }
 
     if let Err(e) = state.scrollback_storage.delete(&pane_id) {
         tracing::warn!("Failed to delete scrollback for pane {pane_id}: {e}");
@@ -324,8 +355,12 @@ pub fn session_restore(
         .expect("workspace state lock poisoned");
     *ws = WorkspaceState::from_session_state(session.clone());
 
-    // Spawn PTYs for each pane
+    // Spawn PTYs for each pane (skip browser panes which don't need PTYs)
     for pane in session.panes.values() {
+        if matches!(pane.pane_type, obelisk_protocol::PaneType::Browser) {
+            continue;
+        }
+
         let cwd = pane.cwd.as_deref().and_then(|c| {
             if std::path::Path::new(c).exists() {
                 Some(c.to_string())
