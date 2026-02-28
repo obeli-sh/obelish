@@ -24,6 +24,7 @@ function createContainer(): HTMLDivElement {
 describe('useTerminal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (Terminal as unknown as { instances: unknown[] }).instances = [];
     clearInvokeMocks();
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
@@ -32,6 +33,7 @@ describe('useTerminal', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
+    (WebglAddon as unknown as { shouldThrow: boolean }).shouldThrow = false;
   });
 
   it('returns a ref callback and isReady=false initially', () => {
