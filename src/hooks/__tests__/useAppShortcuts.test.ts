@@ -185,4 +185,19 @@ describe('useAppShortcuts', () => {
     expect(tauriBridge.pane.close).not.toHaveBeenCalled();
     unmount();
   });
+
+  it('Ctrl+I toggles notification panel', () => {
+    expect(useUiStore.getState().notificationPanelOpen).toBe(false);
+
+    const { unmount } = renderHook(() => useAppShortcuts());
+
+    fireKeydown('i', { ctrlKey: true });
+
+    expect(useUiStore.getState().notificationPanelOpen).toBe(true);
+
+    fireKeydown('i', { ctrlKey: true });
+
+    expect(useUiStore.getState().notificationPanelOpen).toBe(false);
+    unmount();
+  });
 });

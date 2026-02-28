@@ -159,13 +159,24 @@ impl PtyManager {
 
 fn pty_read_loop(mut reader: Box<dyn Read + Send>, pty_id: String, emitter: Arc<dyn EventEmitter>) {
     let mut buf = [0u8; 4096];
+    let mut parser = crate::notifications::osc_parser::OscParser::new();
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                let data = BASE64.encode(&buf[..n]);
+                let (forwarded, notifications) = parser.feed(&buf[..n]);
+                let data = BASE64.encode(&forwarded);
                 let payload = serde_json::json!({ "data": data });
                 let _ = emitter.emit(&format!("pty-data-{pty_id}"), payload);
+                for notif in notifications {
+                    let payload = serde_json::json!({
+                        "ptyId": pty_id,
+                        "oscType": notif.osc_type,
+                        "title": notif.title,
+                        "body": notif.body,
+                    });
+                    let _ = emitter.emit("notification-raw", payload);
+                }
             }
             Err(_) => break,
         }
@@ -632,5 +643,82 @@ mod tests {
         // All IDs should be unique
         let unique: HashSet<_> = ids.iter().collect();
         assert_eq!(unique.len(), 5);
+    }
+
+    #[test]
+    fn read_loop_emits_notification_for_osc9() {
+        let emitter = Arc::new(MockEventEmitter::new());
+        // Reader that produces an OSC 9 notification sequence
+        let osc_data = b"hello\x1b]9;Test notification\x07world";
+        let backend = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(move |_config| {
+                Ok(SpawnedPty {
+                    writer: Box::new(SinkWriter),
+                    reader: Box::new(std::io::Cursor::new(osc_data.to_vec())),
+                    child: Box::new(FakeChild::new()),
+                    resizer: Box::new(FakeResizer),
+                })
+            })),
+        });
+        let manager = PtyManager::new(backend);
+        let _id = manager.spawn(default_config(), emitter.clone()).unwrap();
+
+        // Wait for read thread to process
+        std::thread::sleep(Duration::from_millis(100));
+
+        let events = emitter.events();
+
+        // Should have pty-data event(s)
+        assert!(events.iter().any(|(name, _)| name.starts_with("pty-data-")));
+
+        // Should have notification-raw event
+        let notif_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == "notification-raw")
+            .collect();
+        assert_eq!(notif_events.len(), 1);
+
+        let payload = &notif_events[0].1;
+        assert_eq!(payload["oscType"], 9);
+        assert_eq!(payload["title"], "Test notification");
+
+        // Verify forwarded data has same length as input (all bytes forwarded)
+        let data_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name.starts_with("pty-data-"))
+            .collect();
+        let total_forwarded_bytes: usize = data_events
+            .iter()
+            .map(|(_, payload)| {
+                let b64 = payload["data"].as_str().unwrap();
+                BASE64.decode(b64).unwrap().len()
+            })
+            .sum();
+        assert_eq!(total_forwarded_bytes, osc_data.len());
+    }
+
+    #[test]
+    fn read_loop_no_notification_for_normal_text() {
+        let emitter = Arc::new(MockEventEmitter::new());
+        let normal_data = b"just regular terminal output\n";
+        let backend = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(move |_config| {
+                Ok(SpawnedPty {
+                    writer: Box::new(SinkWriter),
+                    reader: Box::new(std::io::Cursor::new(normal_data.to_vec())),
+                    child: Box::new(FakeChild::new()),
+                    resizer: Box::new(FakeResizer),
+                })
+            })),
+        });
+        let manager = PtyManager::new(backend);
+        let _id = manager.spawn(default_config(), emitter.clone()).unwrap();
+
+        std::thread::sleep(Duration::from_millis(100));
+
+        let events = emitter.events();
+        // Should have pty-data but no notification-raw
+        assert!(events.iter().any(|(name, _)| name.starts_with("pty-data-")));
+        assert!(!events.iter().any(|(name, _)| name == "notification-raw"));
     }
 }

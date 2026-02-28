@@ -48,6 +48,10 @@ export function useAppShortcuts(): void {
         },
       })),
       {
+        key: 'i',
+        action: () => useUiStore.getState().toggleNotificationPanel(),
+      },
+      {
         key: 'ArrowUp',
         action: () => useUiStore.getState().focusAdjacentPane('up'),
       },

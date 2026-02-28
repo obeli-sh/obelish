@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import type { WorkspaceInfo, LayoutNode } from '../../lib/workspace-types';
 import { WorkspaceMetadata } from './WorkspaceMetadata';
+import { NotificationBadge } from '../notifications/NotificationBadge';
+import { useNotificationStore } from '../../stores/notificationStore';
 
 export interface SidebarProps {
   workspaces: WorkspaceInfo[];
@@ -57,8 +59,14 @@ export function Sidebar({
     [onWorkspaceSelect],
   );
 
+  const unreadCount = useNotificationStore((s) => s.unreadCount());
+
   return (
     <nav style={navStyle} onKeyDown={handleKeyDown}>
+      <div style={sidebarHeaderStyle}>
+        <span>Workspaces</span>
+        <NotificationBadge count={unreadCount} />
+      </div>
       <ul ref={listRef} role="list" style={listStyle}>
         {workspaces.map((ws, index) => {
           const paneId = getWorkspacePaneId(ws);
@@ -104,6 +112,17 @@ export function Sidebar({
     </nav>
   );
 }
+
+const sidebarHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '8px 12px',
+  fontSize: '12px',
+  fontWeight: 'bold',
+  color: '#a6adc8',
+  borderBottom: '1px solid #313244',
+};
 
 const navStyle: React.CSSProperties = {
   display: 'flex',

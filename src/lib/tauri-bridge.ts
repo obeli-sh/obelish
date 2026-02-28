@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { WorkspaceInfo, SplitDirection } from './workspace-types';
+import type { WorkspaceInfo, SplitDirection, Notification } from './workspace-types';
 
 export interface PtySpawnArgs {
   shell?: string;
@@ -37,5 +37,10 @@ export const tauriBridge = {
   scrollback: {
     save: (paneId: string, data: string) => invoke<void>('scrollback_save', { paneId, data }),
     load: (paneId: string) => invoke<string | null>('scrollback_load', { paneId }),
+  },
+  notification: {
+    list: () => invoke<Notification[]>('notification_list'),
+    markRead: (id: string) => invoke<void>('notification_mark_read', { id }),
+    clear: () => invoke<void>('notification_clear'),
   },
 } as const;

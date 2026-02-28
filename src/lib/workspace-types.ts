@@ -61,3 +61,14 @@ export interface PortInfo {
   pid: number | null;
   processName: string | null;
 }
+
+export interface Notification {
+  id: string;
+  paneId: string;
+  workspaceId: string;
+  oscType: number;
+  title: string;
+  body: string | null;
+  timestamp: number;
+  read: boolean;
+}

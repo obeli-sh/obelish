@@ -86,3 +86,17 @@ pub struct PortInfo {
     pub pid: Option<u32>,
     pub process_name: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Notification {
+    pub id: String,
+    pub pane_id: String,
+    pub workspace_id: String,
+    pub osc_type: u32,
+    pub title: String,
+    pub body: Option<String>,
+    pub timestamp: u64,
+    pub read: bool,
+}

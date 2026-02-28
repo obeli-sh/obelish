@@ -56,7 +56,7 @@ describe('AppLayout', () => {
     clearEventMocks();
     // Reset stores
     useWorkspaceStore.setState({ workspaces: {}, activeWorkspaceId: null });
-    useUiStore.setState({ focusedPaneId: null, sidebarOpen: true });
+    useUiStore.setState({ focusedPaneId: null, sidebarOpen: true, notificationPanelOpen: false });
     // Default mocks for commands that may be called
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);

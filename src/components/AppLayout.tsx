@@ -4,7 +4,9 @@ import { useUiStore } from '../stores/uiStore';
 import { Sidebar } from './sidebar/Sidebar';
 import { SurfaceTabBar } from './layout/SurfaceTabBar';
 import { PaneSplitter } from './layout/PaneSplitter';
+import { NotificationPanel } from './notifications/NotificationPanel';
 import { useAppShortcuts } from '../hooks/useAppShortcuts';
+import { useNotificationListener } from '../hooks/useNotificationListener';
 import { tauriBridge } from '../lib/tauri-bridge';
 import { listen } from '@tauri-apps/api/event';
 import type { WorkspaceChangedEvent } from '../lib/workspace-types';
@@ -20,9 +22,12 @@ export function AppLayout() {
 
   const focusedPaneId = useUiStore((s) => s.focusedPaneId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const notificationPanelOpen = useUiStore((s) => s.notificationPanelOpen);
   const setFocusedPane = useUiStore((s) => s.setFocusedPane);
+  const toggleNotificationPanel = useUiStore((s) => s.toggleNotificationPanel);
 
   useAppShortcuts();
+  useNotificationListener();
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +171,9 @@ export function AppLayout() {
           )}
         </div>
       </div>
+      {notificationPanelOpen && (
+        <NotificationPanel isOpen={notificationPanelOpen} onClose={toggleNotificationPanel} />
+      )}
     </div>
   );
 }

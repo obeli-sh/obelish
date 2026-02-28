@@ -57,4 +57,22 @@ describe('PaneWrapper', () => {
     // React.memo components have a $$typeof of Symbol.for('react.memo') or a 'compare' property
     expect(PaneWrapper).toHaveProperty('$$typeof', Symbol.for('react.memo'));
   });
+
+  it('shows_blue_ring_when_notification', () => {
+    const { container } = render(
+      <PaneWrapper {...defaultProps} hasNotification={true} />,
+    );
+
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.style.borderColor).toBe('rgb(96, 165, 250)');
+  });
+
+  it('no_ring_when_no_notification', () => {
+    const { container } = render(
+      <PaneWrapper {...defaultProps} hasNotification={false} />,
+    );
+
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.style.borderColor).toBe('transparent');
+  });
 });

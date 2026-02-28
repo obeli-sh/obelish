@@ -235,4 +235,65 @@ describe('tauriBridge', () => {
       await expect(tauriBridge.scrollback.load('pane-1')).rejects.toThrow('load failed');
     });
   });
+
+  describe('notification.list', () => {
+    it('calls invoke with notification_list and returns notifications', async () => {
+      const mockNotifications = [
+        {
+          id: 'n1',
+          paneId: 'pane-1',
+          workspaceId: 'ws-1',
+          oscType: 9,
+          title: 'Build complete',
+          body: null,
+          timestamp: 1000,
+          read: false,
+        },
+      ];
+      mockInvoke('notification_list', () => mockNotifications);
+
+      const result = await tauriBridge.notification.list();
+
+      expect(invoke).toHaveBeenCalledWith('notification_list');
+      expect(result).toEqual(mockNotifications);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('notification_list', () => Promise.reject(new Error('list failed')));
+
+      await expect(tauriBridge.notification.list()).rejects.toThrow('list failed');
+    });
+  });
+
+  describe('notification.markRead', () => {
+    it('calls invoke with notification_mark_read and id', async () => {
+      mockInvoke('notification_mark_read', () => undefined);
+
+      await tauriBridge.notification.markRead('n1');
+
+      expect(invoke).toHaveBeenCalledWith('notification_mark_read', { id: 'n1' });
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('notification_mark_read', () => Promise.reject(new Error('mark failed')));
+
+      await expect(tauriBridge.notification.markRead('n1')).rejects.toThrow('mark failed');
+    });
+  });
+
+  describe('notification.clear', () => {
+    it('calls invoke with notification_clear', async () => {
+      mockInvoke('notification_clear', () => undefined);
+
+      await tauriBridge.notification.clear();
+
+      expect(invoke).toHaveBeenCalledWith('notification_clear');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('notification_clear', () => Promise.reject(new Error('clear failed')));
+
+      await expect(tauriBridge.notification.clear()).rejects.toThrow('clear failed');
+    });
+  });
 });

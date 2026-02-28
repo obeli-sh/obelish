@@ -1,4 +1,5 @@
 use crate::error::BackendError;
+use crate::notifications::store::NotificationStore;
 use crate::persistence::session::SessionManager;
 use crate::pty::emitter::TauriEventEmitter;
 use crate::pty::types::{PtyConfig, PtySpawnResult};
@@ -6,7 +7,7 @@ use crate::pty::PtyManager;
 use crate::scrollback::ScrollbackStorage;
 use crate::workspace::WorkspaceState;
 use base64::Engine as _;
-use obelisk_protocol::{LayoutNode, SplitDirection, WorkspaceInfo};
+use obelisk_protocol::{LayoutNode, Notification, SplitDirection, WorkspaceInfo};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter, State};
@@ -16,6 +17,7 @@ pub struct AppState {
     pub workspace_state: Arc<RwLock<WorkspaceState>>,
     pub session_manager: SessionManager,
     pub scrollback_storage: ScrollbackStorage,
+    pub notification_store: Arc<RwLock<NotificationStore>>,
 }
 
 impl AppState {
@@ -25,6 +27,7 @@ impl AppState {
             workspace_state: Arc::new(RwLock::new(WorkspaceState::new())),
             session_manager,
             scrollback_storage,
+            notification_store: Arc::new(RwLock::new(NotificationStore::new(1000))),
         }
     }
 }
@@ -394,6 +397,41 @@ pub fn scrollback_load(
         Some(bytes) => Ok(Some(base64::engine::general_purpose::STANDARD.encode(&bytes))),
         None => Ok(None),
     }
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn notification_list(state: State<'_, AppState>) -> Result<Vec<Notification>, BackendError> {
+    let store = state
+        .notification_store
+        .read()
+        .expect("notification store lock poisoned");
+    Ok(store.list().to_vec())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn notification_mark_read(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), BackendError> {
+    let mut store = state
+        .notification_store
+        .write()
+        .expect("notification store lock poisoned");
+    store.mark_read(&id);
+    Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn notification_clear(state: State<'_, AppState>) -> Result<(), BackendError> {
+    let mut store = state
+        .notification_store
+        .write()
+        .expect("notification store lock poisoned");
+    store.clear();
+    Ok(())
 }
 
 fn collect_layout_pane_ids(layout: &LayoutNode, ids: &mut Vec<String>) {

@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod error;
 pub mod metadata;
+pub mod notifications;
 pub mod persistence;
 pub mod pty;
 pub mod scrollback;
@@ -74,6 +75,9 @@ pub fn run() {
             commands::session_restore,
             commands::scrollback_save,
             commands::scrollback_load,
+            commands::notification_list,
+            commands::notification_mark_read,
+            commands::notification_clear,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

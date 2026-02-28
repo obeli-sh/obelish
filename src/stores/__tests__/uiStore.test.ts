@@ -40,6 +40,7 @@ describe('uiStore', () => {
     useUiStore.setState({
       focusedPaneId: null,
       sidebarOpen: true,
+      notificationPanelOpen: false,
     });
     useWorkspaceStore.setState({
       workspaces: {},
@@ -73,6 +74,16 @@ describe('uiStore', () => {
       expect(useUiStore.getState().sidebarOpen).toBe(false);
       useUiStore.getState().toggleSidebar();
       expect(useUiStore.getState().sidebarOpen).toBe(true);
+    });
+  });
+
+  describe('toggleNotificationPanel', () => {
+    it('toggles notificationPanelOpen state', () => {
+      expect(useUiStore.getState().notificationPanelOpen).toBe(false);
+      useUiStore.getState().toggleNotificationPanel();
+      expect(useUiStore.getState().notificationPanelOpen).toBe(true);
+      useUiStore.getState().toggleNotificationPanel();
+      expect(useUiStore.getState().notificationPanelOpen).toBe(false);
     });
   });
 

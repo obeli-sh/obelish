@@ -7,8 +7,10 @@ type Direction = 'up' | 'down' | 'left' | 'right';
 interface UiStoreState {
   focusedPaneId: string | null;
   sidebarOpen: boolean;
+  notificationPanelOpen: boolean;
   setFocusedPane: (id: string | null) => void;
   toggleSidebar: () => void;
+  toggleNotificationPanel: () => void;
   focusAdjacentPane: (direction: Direction) => void;
 }
 
@@ -88,6 +90,7 @@ function findAdjacentPane(layout: LayoutNode, paneId: string, direction: Directi
 export const useUiStore = create<UiStoreState>((set, get) => ({
   focusedPaneId: null,
   sidebarOpen: true,
+  notificationPanelOpen: false,
 
   setFocusedPane: (id) => {
     set({ focusedPaneId: id });
@@ -95,6 +98,10 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   toggleSidebar: () => {
     set((state) => ({ sidebarOpen: !state.sidebarOpen }));
+  },
+
+  toggleNotificationPanel: () => {
+    set((state) => ({ notificationPanelOpen: !state.notificationPanelOpen }));
   },
 
   focusAdjacentPane: (direction) => {
