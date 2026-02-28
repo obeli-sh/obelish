@@ -13,9 +13,20 @@ import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { useNotificationListener } from '../hooks/useNotificationListener';
 import { tauriBridge } from '../lib/tauri-bridge';
 import { getCommands, getCommandById } from '../lib/commands';
+import { getAutoSplitDirection } from '../lib/auto-split';
 import { listen } from '@tauri-apps/api/event';
-import type { WorkspaceChangedEvent } from '../lib/workspace-types';
+import type { WorkspaceChangedEvent, LayoutNode } from '../lib/workspace-types';
 import type { KeyBinding } from '../lib/keybinding-utils';
+
+function getFirstLeafPaneId(layout: LayoutNode): string | null {
+  if (layout.type === 'leaf') return layout.paneId;
+  return getFirstLeafPaneId(layout.children[0]);
+}
+
+function paneExistsInLayout(layout: LayoutNode, paneId: string): boolean {
+  if (layout.type === 'leaf') return layout.paneId === paneId;
+  return layout.children.some((child) => paneExistsInLayout(child, paneId));
+}
 
 export function AppLayout() {
   const [loading, setLoading] = useState(true);
@@ -23,6 +34,7 @@ export function AppLayout() {
 
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const orderedIds = useWorkspaceStore((s) => s.orderedIds);
   const activeWorkspace = useWorkspaceStore((s) => s.getActiveWorkspace());
   const activeSurface = useWorkspaceStore((s) => s.getActiveSurface());
 
@@ -44,6 +56,12 @@ export function AppLayout() {
 
   useAppShortcuts();
   useNotificationListener();
+
+  const handlePaneResize = useCallback((paneId: string, width: number, height: number) => {
+    if (useUiStore.getState().focusedPaneId === paneId) {
+      useUiStore.getState().setFocusedPaneDimensions({ width, height });
+    }
+  }, []);
 
   const handleCommandExecute = useCallback((commandId: string) => {
     const cmd = getCommandById(commandId);
@@ -79,8 +97,11 @@ export function AppLayout() {
         if (list.length > 0) {
           useWorkspaceStore.getState()._setActiveWorkspace(list[0].id);
           const firstWs = list[0];
-          if (firstWs.surfaces.length > 0 && firstWs.surfaces[0].layout.type === 'leaf') {
-            useUiStore.getState().setFocusedPane(firstWs.surfaces[0].layout.paneId);
+          if (firstWs.surfaces.length > 0) {
+            const firstLeaf = getFirstLeafPaneId(firstWs.surfaces[0].layout);
+            if (firstLeaf) {
+              useUiStore.getState().setFocusedPane(firstLeaf);
+            }
           }
         }
 
@@ -144,6 +165,26 @@ export function AppLayout() {
     };
   }, []);
 
+  // Clear stale focusedPaneId when the active workspace changes
+  // (e.g. via backend workspace-removed event)
+  useEffect(() => {
+    if (!activeWorkspace) {
+      useUiStore.getState().setFocusedPane(null);
+      useUiStore.getState().setFocusedPaneDimensions(null);
+      return;
+    }
+    // If focusedPaneId doesn't belong to the current workspace, reset it
+    const currentFocused = useUiStore.getState().focusedPaneId;
+    if (currentFocused) {
+      const layout = activeWorkspace.surfaces[activeWorkspace.activeSurfaceIndex]?.layout;
+      if (layout && !paneExistsInLayout(layout, currentFocused)) {
+        const firstLeaf = getFirstLeafPaneId(layout);
+        useUiStore.getState().setFocusedPane(firstLeaf);
+        useUiStore.getState().setFocusedPaneDimensions(null);
+      }
+    }
+  }, [activeWorkspace]);
+
   const handleWorkspaceSelect = (id: string) => {
     useWorkspaceStore.getState()._setActiveWorkspace(id);
   };
@@ -160,12 +201,113 @@ export function AppLayout() {
 
   const handleWorkspaceClose = async (id: string) => {
     try {
+      // Clear focused pane state BEFORE removing the workspace to prevent
+      // stale references in ResizeObserver callbacks during unmount
+      useUiStore.getState().setFocusedPane(null);
+      useUiStore.getState().setFocusedPaneDimensions(null);
+
       await tauriBridge.workspace.close(id);
       useWorkspaceStore.getState()._removeWorkspace(id);
+
+      // Focus the first pane in the next active workspace (if any)
+      const nextWorkspace = useWorkspaceStore.getState().getActiveWorkspace();
+      if (nextWorkspace && nextWorkspace.surfaces.length > 0) {
+        const firstLeaf = getFirstLeafPaneId(nextWorkspace.surfaces[0].layout);
+        if (firstLeaf) {
+          useUiStore.getState().setFocusedPane(firstLeaf);
+        }
+      }
     } catch (err) {
       console.error('Failed to close workspace:', err);
     }
   };
+
+  const handleWorkspaceRename = async (id: string, newName: string) => {
+    try {
+      const ws = await tauriBridge.workspace.rename(id, newName);
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to rename workspace:', err);
+    }
+  };
+
+  const handleWorkspaceReorder = async (newOrderedIds: string[]) => {
+    useWorkspaceStore.getState()._reorderWorkspaces(newOrderedIds);
+    try {
+      await tauriBridge.workspace.reorder(newOrderedIds);
+    } catch (err) {
+      console.error('Failed to reorder workspaces:', err);
+    }
+  };
+
+  const handlePaneClose = useCallback(async (paneId: string) => {
+    try {
+      console.debug('[AppLayout] handlePaneClose start', paneId);
+      // Clear focused state BEFORE closing to prevent stale references
+      // in ResizeObserver callbacks during the unmount transition
+      if (useUiStore.getState().focusedPaneId === paneId) {
+        useUiStore.getState().setFocusedPane(null);
+        useUiStore.getState().setFocusedPaneDimensions(null);
+      }
+      console.debug('[AppLayout] calling pane.close', paneId);
+
+      await tauriBridge.pane.close(paneId);
+      console.debug('[AppLayout] pane.close returned', paneId);
+      useWorkspaceStore.getState()._removePaneName(paneId);
+
+      // Focus the first pane in the updated active workspace (if any)
+      const ws = useWorkspaceStore.getState().getActiveWorkspace();
+      if (ws && ws.surfaces.length > 0) {
+        const firstLeaf = getFirstLeafPaneId(ws.surfaces[0].layout);
+        if (firstLeaf) {
+          useUiStore.getState().setFocusedPane(firstLeaf);
+        }
+      }
+      console.debug('[AppLayout] handlePaneClose complete', paneId);
+    } catch (err) {
+      console.error('Failed to close pane:', err);
+    }
+  }, []);
+
+  const handlePaneSplitHorizontal = useCallback(async (paneId: string) => {
+    try {
+      const ws = await tauriBridge.pane.split(paneId, 'horizontal');
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to split pane:', err);
+    }
+  }, []);
+
+  const handlePaneSplitVertical = useCallback(async (paneId: string) => {
+    try {
+      const ws = await tauriBridge.pane.split(paneId, 'vertical');
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to split pane:', err);
+    }
+  }, []);
+
+  const handlePaneAutoSplit = useCallback(async (paneId: string) => {
+    try {
+      const dims = useUiStore.getState().focusedPaneDimensions;
+      const direction = dims
+        ? getAutoSplitDirection(dims.width, dims.height)
+        : 'vertical';
+      const ws = await tauriBridge.pane.split(paneId, direction);
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to auto-split pane:', err);
+    }
+  }, []);
+
+  const handlePaneOpenBrowser = useCallback(async (paneId: string) => {
+    try {
+      const ws = await tauriBridge.pane.openBrowser(paneId, 'about:blank', 'vertical');
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to open browser:', err);
+    }
+  }, []);
 
   const handleSurfaceSelect = (surfaceId: string) => {
     if (!activeWorkspace) return;
@@ -193,7 +335,7 @@ export function AppLayout() {
     return <div style={{ padding: 20, color: '#f38ba8' }}>Failed to load workspaces: {error}</div>;
   }
 
-  const workspaceList = Object.values(workspaces);
+  const workspaceList = orderedIds.map((id) => workspaces[id]).filter(Boolean);
 
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#1e1e2e' }}>
@@ -204,6 +346,8 @@ export function AppLayout() {
           onWorkspaceSelect={handleWorkspaceSelect}
           onWorkspaceCreate={handleWorkspaceCreate}
           onWorkspaceClose={handleWorkspaceClose}
+          onWorkspaceReorder={handleWorkspaceReorder}
+          onWorkspaceRename={handleWorkspaceRename}
         />
       )}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -216,12 +360,18 @@ export function AppLayout() {
             onSurfaceClose={handleSurfaceClose}
           />
         )}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ flex: 1, height: '100%', overflow: 'hidden' }}>
           {activeSurface && (
             <PaneSplitter
               layout={activeSurface.layout}
               activePaneId={focusedPaneId}
               onPaneClick={setFocusedPane}
+              onPaneResize={handlePaneResize}
+              onPaneClose={handlePaneClose}
+              onPaneSplitHorizontal={handlePaneSplitHorizontal}
+              onPaneSplitVertical={handlePaneSplitVertical}
+              onPaneAutoSplit={handlePaneAutoSplit}
+              onPaneOpenBrowser={handlePaneOpenBrowser}
             />
           )}
         </div>

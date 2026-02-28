@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUiStore } from '../uiStore';
 import { useWorkspaceStore } from '../workspaceStore';
@@ -39,6 +40,7 @@ describe('uiStore', () => {
   beforeEach(() => {
     useUiStore.setState({
       focusedPaneId: null,
+      focusedPaneDimensions: null,
       sidebarOpen: true,
       notificationPanelOpen: false,
       commandPaletteOpen: false,
@@ -223,6 +225,23 @@ describe('uiStore', () => {
       useUiStore.getState().setFocusedPane('pane-3');
       useUiStore.getState().focusAdjacentPane('up');
       expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
+    });
+  });
+
+  describe('focusedPaneDimensions', () => {
+    it('starts as null', () => {
+      expect(useUiStore.getState().focusedPaneDimensions).toBeNull();
+    });
+
+    it('can be set via setFocusedPaneDimensions', () => {
+      useUiStore.getState().setFocusedPaneDimensions({ width: 800, height: 400 });
+      expect(useUiStore.getState().focusedPaneDimensions).toEqual({ width: 800, height: 400 });
+    });
+
+    it('can be cleared by setting null', () => {
+      useUiStore.getState().setFocusedPaneDimensions({ width: 800, height: 400 });
+      useUiStore.getState().setFocusedPaneDimensions(null);
+      expect(useUiStore.getState().focusedPaneDimensions).toBeNull();
     });
   });
 });

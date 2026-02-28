@@ -14,7 +14,7 @@ export function TerminalPane({ paneId, ptyId, isActive, onReady }: TerminalPaneP
 
   useEffect(() => {
     if (isActive && isReady && terminal.current) {
-      terminal.current.focus();
+      try { terminal.current.focus(); } catch { /* terminal may be disposed */ }
     }
   }, [isActive, isReady, terminal]);
 

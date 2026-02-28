@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNotificationStore } from '../notificationStore';
 import type { Notification } from '../../lib/workspace-types';

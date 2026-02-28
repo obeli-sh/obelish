@@ -38,7 +38,7 @@ interface SettingsStoreState {
 export const useSettingsStore = create<SettingsStoreState>((set) => ({
   keybindings: buildDefaultKeybindings(),
   theme: 'dark',
-  terminalFontFamily: 'monospace',
+  terminalFontFamily: '"Fira Mono", monospace',
   terminalFontSize: 14,
   scrollbackLines: 5000,
 

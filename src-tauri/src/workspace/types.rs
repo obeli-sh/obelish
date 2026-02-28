@@ -13,4 +13,5 @@ pub struct PaneCloseResult {
     pub pty_id: String,
     pub workspace_closed: bool,
     pub workspace: Option<WorkspaceInfo>,
+    pub closed_workspace_id: Option<String>,
 }

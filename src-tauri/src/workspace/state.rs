@@ -303,18 +303,22 @@ impl WorkspaceState {
             Some(workspace.clone())
         };
 
-        if workspace_closed {
+        let closed_workspace_id = if workspace_closed {
             let workspace_id = workspace.id.clone();
             self.workspaces.retain(|w| w.id != workspace_id);
             if self.active_workspace_id.as_deref() == Some(&workspace_id) {
                 self.active_workspace_id = self.workspaces.first().map(|w| w.id.clone());
             }
-        }
+            Some(workspace_id)
+        } else {
+            None
+        };
 
         Ok(PaneCloseResult {
             pty_id,
             workspace_closed,
             workspace: workspace_info,
+            closed_workspace_id,
         })
     }
 
@@ -344,6 +348,50 @@ impl WorkspaceState {
 
     pub fn active_workspace_id(&self) -> Option<&str> {
         self.active_workspace_id.as_deref()
+    }
+
+    pub fn rename_workspace(
+        &mut self,
+        id: &str,
+        new_name: String,
+    ) -> Result<WorkspaceInfo, WorkspaceError> {
+        let trimmed = new_name.trim().to_string();
+        if trimmed.is_empty() {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "workspace name cannot be empty".to_string(),
+            });
+        }
+        let ws = self
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == id)
+            .ok_or_else(|| WorkspaceError::NotFound { id: id.to_string() })?;
+        ws.name = trimmed;
+        Ok(ws.clone())
+    }
+
+    pub fn reorder_workspaces(&mut self, ordered_ids: &[String]) -> Result<(), WorkspaceError> {
+        if ordered_ids.len() != self.workspaces.len() {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: format!(
+                    "expected {} workspace IDs, got {}",
+                    self.workspaces.len(),
+                    ordered_ids.len()
+                ),
+            });
+        }
+
+        let mut reordered = Vec::with_capacity(ordered_ids.len());
+        for id in ordered_ids {
+            let pos = self
+                .workspaces
+                .iter()
+                .position(|w| &w.id == id)
+                .ok_or_else(|| WorkspaceError::NotFound { id: id.clone() })?;
+            reordered.push(self.workspaces[pos].clone());
+        }
+        self.workspaces = reordered;
+        Ok(())
     }
 
     fn collect_pane_ids(&mut self, layout: &LayoutNode, pty_ids: &mut Vec<String>) {
@@ -786,6 +834,54 @@ mod tests {
         assert!(result.workspace_closed);
         assert!(state.get_workspace(&ws1.id).is_none());
         assert_eq!(state.list_workspaces().len(), 1);
+    }
+
+    #[test]
+    fn close_last_pane_returns_closed_workspace_id() {
+        let mut state = new_state();
+        let ws1 = state.create_workspace(
+            "First".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+        state.create_workspace(
+            "Second".to_string(),
+            "pane-2".to_string(),
+            "pty-2".to_string(),
+        );
+
+        let result = state.close_pane("pane-1").unwrap();
+        assert!(result.workspace_closed);
+        assert_eq!(
+            result.closed_workspace_id.as_deref(),
+            Some(ws1.id.as_str()),
+            "close_pane should return the ID of the closed workspace"
+        );
+    }
+
+    #[test]
+    fn close_pane_without_closing_workspace_has_no_closed_workspace_id() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+        state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        let result = state.close_pane("pane-1").unwrap();
+        assert!(!result.workspace_closed);
+        assert_eq!(
+            result.closed_workspace_id, None,
+            "close_pane should not return a workspace ID when workspace is not closed"
+        );
     }
 
     #[test]
@@ -1373,6 +1469,125 @@ mod tests {
         // After closing the active workspace, it should switch to another
         assert!(state.active_workspace_id().is_some());
         assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
+    }
+
+    #[test]
+    fn rename_workspace_updates_name() {
+        let mut state = new_state();
+        let ws = state.create_workspace(
+            "Original".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let result = state
+            .rename_workspace(&ws.id, "Renamed".to_string())
+            .unwrap();
+
+        assert_eq!(result.name, "Renamed");
+        assert_eq!(state.get_workspace(&ws.id).unwrap().name, "Renamed");
+    }
+
+    #[test]
+    fn rename_workspace_not_found() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state
+            .rename_workspace("nonexistent", "New Name".to_string())
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::NotFound { id } if id == "nonexistent"));
+    }
+
+    #[test]
+    fn rename_workspace_rejects_empty_name() {
+        let mut state = new_state();
+        let ws = state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let err = state.rename_workspace(&ws.id, "".to_string()).unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidSplit { .. }));
+
+        // Whitespace-only should also be rejected
+        let err = state
+            .rename_workspace(&ws.id, "   ".to_string())
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidSplit { .. }));
+    }
+
+    #[test]
+    fn rename_workspace_trims_whitespace() {
+        let mut state = new_state();
+        let ws = state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+
+        let result = state
+            .rename_workspace(&ws.id, "  Trimmed  ".to_string())
+            .unwrap();
+        assert_eq!(result.name, "Trimmed");
+    }
+
+    #[test]
+    fn reorder_workspaces_rearranges_vec() {
+        let mut state = new_state();
+        let ws1 = state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+        let ws2 = state.create_workspace("B".to_string(), "p2".to_string(), "pty2".to_string());
+        let ws3 = state.create_workspace("C".to_string(), "p3".to_string(), "pty3".to_string());
+
+        state
+            .reorder_workspaces(&[ws3.id.clone(), ws1.id.clone(), ws2.id.clone()])
+            .unwrap();
+
+        let list = state.list_workspaces();
+        assert_eq!(list[0].name, "C");
+        assert_eq!(list[1].name, "A");
+        assert_eq!(list[2].name, "B");
+    }
+
+    #[test]
+    fn reorder_workspaces_rejects_mismatched_length() {
+        let mut state = new_state();
+        let ws1 = state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+
+        let result = state.reorder_workspaces(&[ws1.id.clone(), "extra".to_string()]);
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::InvalidSplit { .. }
+        ));
+    }
+
+    #[test]
+    fn reorder_workspaces_rejects_unknown_id() {
+        let mut state = new_state();
+        state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+
+        let result = state.reorder_workspaces(&["unknown-id".to_string()]);
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::NotFound { .. }
+        ));
+    }
+
+    #[test]
+    fn reorder_workspaces_rejects_empty_when_workspaces_exist() {
+        let mut state = new_state();
+        state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+
+        let result = state.reorder_workspaces(&[]);
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkspaceError::InvalidSplit { .. }
+        ));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import type React from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { PaneWrapper } from './PaneWrapper';
 import { BrowserPane } from '../browser/BrowserPane';
@@ -8,9 +9,25 @@ interface PaneSplitterProps {
   layout: LayoutNode;
   activePaneId: string | null;
   onPaneClick: (paneId: string) => void;
+  onPaneResize?: (paneId: string, width: number, height: number) => void;
+  onPaneClose?: (paneId: string) => void;
+  onPaneSplitHorizontal?: (paneId: string) => void;
+  onPaneSplitVertical?: (paneId: string) => void;
+  onPaneAutoSplit?: (paneId: string) => void;
+  onPaneOpenBrowser?: (paneId: string) => void;
 }
 
-export function PaneSplitter({ layout, activePaneId, onPaneClick }: PaneSplitterProps) {
+export function PaneSplitter({
+  layout,
+  activePaneId,
+  onPaneClick,
+  onPaneResize,
+  onPaneClose,
+  onPaneSplitHorizontal,
+  onPaneSplitVertical,
+  onPaneAutoSplit,
+  onPaneOpenBrowser,
+}: PaneSplitterProps) {
   const browserPaneUrls = useWorkspaceStore((s) => s.browserPaneUrls);
 
   if (layout.type === 'leaf') {
@@ -42,6 +59,12 @@ export function PaneSplitter({ layout, activePaneId, onPaneClick }: PaneSplitter
         ptyId={layout.ptyId}
         isActive={isActive}
         onClick={() => onPaneClick(layout.paneId)}
+        onResize={onPaneResize ? (w, h) => onPaneResize(layout.paneId, w, h) : undefined}
+        onClose={onPaneClose ? () => onPaneClose(layout.paneId) : undefined}
+        onSplitHorizontal={onPaneSplitHorizontal ? () => onPaneSplitHorizontal(layout.paneId) : undefined}
+        onSplitVertical={onPaneSplitVertical ? () => onPaneSplitVertical(layout.paneId) : undefined}
+        onAutoSplit={onPaneAutoSplit ? () => onPaneAutoSplit(layout.paneId) : undefined}
+        onOpenBrowser={onPaneOpenBrowser ? () => onPaneOpenBrowser(layout.paneId) : undefined}
       />
     );
   }
@@ -53,16 +76,35 @@ export function PaneSplitter({ layout, activePaneId, onPaneClick }: PaneSplitter
           layout={layout.children[0]}
           activePaneId={activePaneId}
           onPaneClick={onPaneClick}
+          onPaneResize={onPaneResize}
+          onPaneClose={onPaneClose}
+          onPaneSplitHorizontal={onPaneSplitHorizontal}
+          onPaneSplitVertical={onPaneSplitVertical}
+          onPaneAutoSplit={onPaneAutoSplit}
+          onPaneOpenBrowser={onPaneOpenBrowser}
         />
       </Panel>
-      <Separator />
+      <Separator style={separatorStyle} />
       <Panel defaultSize={layout.sizes[1] * 100}>
         <PaneSplitter
           layout={layout.children[1]}
           activePaneId={activePaneId}
           onPaneClick={onPaneClick}
+          onPaneResize={onPaneResize}
+          onPaneClose={onPaneClose}
+          onPaneSplitHorizontal={onPaneSplitHorizontal}
+          onPaneSplitVertical={onPaneSplitVertical}
+          onPaneAutoSplit={onPaneAutoSplit}
+          onPaneOpenBrowser={onPaneOpenBrowser}
         />
       </Panel>
     </Group>
   );
 }
+
+const separatorStyle: React.CSSProperties = {
+  background: '#313244',
+  flexShrink: 0,
+  flexBasis: 4,
+  cursor: 'auto',
+};

@@ -23,6 +23,7 @@ describe('Sidebar', () => {
     onWorkspaceSelect: vi.fn(),
     onWorkspaceCreate: vi.fn(),
     onWorkspaceClose: vi.fn(),
+    onWorkspaceReorder: vi.fn(),
   };
 
   beforeEach(() => {
@@ -116,6 +117,94 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} workspaces={[]} />);
     expect(screen.getByRole('navigation')).toBeInTheDocument();
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it('workspace items are draggable', () => {
+    render(<Sidebar {...defaultProps} />);
+    const items = screen.getAllByRole('listitem');
+    // useSortable adds tabindex to make items interactive for DnD
+    for (const item of items) {
+      expect(item).toHaveAttribute('tabindex');
+    }
+  });
+
+  describe('workspace rename', () => {
+    it('double-click workspace name shows input with current name', async () => {
+      const user = userEvent.setup();
+      render(<Sidebar {...defaultProps} onWorkspaceRename={vi.fn()} />);
+
+      const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
+      await user.dblClick(nameButton);
+
+      const input = screen.getByRole('textbox');
+      expect(input).toBeInTheDocument();
+      expect(input).toHaveValue('Workspace 1');
+    });
+
+    it('pressing Enter in input calls onWorkspaceRename', async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      render(<Sidebar {...defaultProps} onWorkspaceRename={onRename} />);
+
+      const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
+      await user.dblClick(nameButton);
+
+      const input = screen.getByRole('textbox');
+      await user.clear(input);
+      await user.type(input, 'New Name{Enter}');
+
+      expect(onRename).toHaveBeenCalledWith('ws-1', 'New Name');
+      // Input should be gone, button should be back
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
+
+    it('pressing Escape reverts without calling onWorkspaceRename', async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      render(<Sidebar {...defaultProps} onWorkspaceRename={onRename} />);
+
+      const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
+      await user.dblClick(nameButton);
+
+      const input = screen.getByRole('textbox');
+      await user.clear(input);
+      await user.type(input, 'New Name{Escape}');
+
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      // Original name should be shown
+      expect(screen.getByRole('button', { name: 'Workspace 1' })).toBeInTheDocument();
+    });
+
+    it('blur on input calls onWorkspaceRename', async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      render(<Sidebar {...defaultProps} onWorkspaceRename={onRename} />);
+
+      const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
+      await user.dblClick(nameButton);
+
+      const input = screen.getByRole('textbox');
+      await user.clear(input);
+      await user.type(input, 'Blurred Name');
+      // Click elsewhere to blur
+      await user.click(screen.getByRole('button', { name: /new workspace/i }));
+
+      expect(onRename).toHaveBeenCalledWith('ws-1', 'Blurred Name');
+    });
+
+    it('single click still calls onWorkspaceSelect (not rename)', async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      render(<Sidebar {...defaultProps} onWorkspaceRename={onRename} />);
+
+      const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
+      await user.click(nameButton);
+
+      expect(defaultProps.onWorkspaceSelect).toHaveBeenCalledWith('ws-1');
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    });
   });
 
   it('renders WorkspaceMetadata for each workspace', async () => {

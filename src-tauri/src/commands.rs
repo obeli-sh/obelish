@@ -223,6 +223,17 @@ pub fn workspace_close(
         ws.close_workspace(&workspace_id)?
     };
 
+    // Emit event BEFORE PTY cleanup so the frontend gets the state update
+    // immediately. PTY kills can block on Windows (ConPTY pipe drain) and
+    // would otherwise delay the IPC response, freezing the UI.
+    state.session_manager.mark_dirty();
+
+    let _ = app.emit(
+        "workspace-removed",
+        serde_json::json!({ "workspaceId": workspace_id }),
+    );
+
+    // PTY cleanup after event emission — no longer blocks the UI
     for pty_id in pty_ids {
         if !pty_id.is_empty() {
             let _ = state.pty_manager.kill(&pty_id);
@@ -235,14 +246,28 @@ pub fn workspace_close(
         }
     }
 
-    state.session_manager.mark_dirty();
-
-    let _ = app.emit(
-        "workspace-removed",
-        serde_json::json!({ "workspaceId": workspace_id }),
-    );
-
     Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state, app))]
+pub fn workspace_rename(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    workspace_id: String,
+    new_name: String,
+) -> Result<WorkspaceInfo, BackendError> {
+    let mut ws = state
+        .workspace_state
+        .write()
+        .expect("workspace state lock poisoned");
+    let workspace = ws.rename_workspace(&workspace_id, new_name)?;
+    state.session_manager.mark_dirty();
+    let _ = app.emit(
+        "workspace-changed",
+        serde_json::json!({ "workspaceId": workspace.id, "workspace": workspace }),
+    );
+    Ok(workspace)
 }
 
 #[tauri::command]
@@ -253,6 +278,21 @@ pub fn workspace_list(state: State<'_, AppState>) -> Result<Vec<WorkspaceInfo>, 
         .read()
         .expect("workspace state lock poisoned");
     Ok(ws.list_workspaces().to_vec())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn workspace_reorder(
+    state: State<'_, AppState>,
+    workspace_ids: Vec<String>,
+) -> Result<(), BackendError> {
+    let mut ws = state
+        .workspace_state
+        .write()
+        .expect("workspace state lock poisoned");
+    ws.reorder_workspaces(&workspace_ids)?;
+    state.session_manager.mark_dirty();
+    Ok(())
 }
 
 #[tauri::command]
@@ -341,14 +381,9 @@ pub fn pane_close(
         ws.close_pane(&pane_id)?
     };
 
-    if !result.pty_id.is_empty() {
-        let _ = state.pty_manager.kill(&result.pty_id);
-    }
-
-    if let Err(e) = state.scrollback_storage.delete(&pane_id) {
-        tracing::warn!("Failed to delete scrollback for pane {pane_id}: {e}");
-    }
-
+    // Emit events BEFORE PTY cleanup so the frontend gets the state update
+    // immediately. PTY kill can block on Windows (ConPTY pipe drain) and
+    // would otherwise delay the IPC response, freezing the UI.
     state.session_manager.mark_dirty();
 
     if let Some(workspace) = &result.workspace {
@@ -356,12 +391,20 @@ pub fn pane_close(
             "workspace-changed",
             serde_json::json!({ "workspaceId": workspace.id, "workspace": workspace }),
         );
-    } else {
-        // Workspace was closed because last pane was removed
+    } else if let Some(closed_id) = &result.closed_workspace_id {
         let _ = app.emit(
             "workspace-removed",
-            serde_json::json!({ "workspaceId": "closed" }),
+            serde_json::json!({ "workspaceId": closed_id }),
         );
+    }
+
+    // PTY cleanup after event emission — no longer blocks the UI
+    if !result.pty_id.is_empty() {
+        let _ = state.pty_manager.kill(&result.pty_id);
+    }
+
+    if let Err(e) = state.scrollback_storage.delete(&pane_id) {
+        tracing::warn!("Failed to delete scrollback for pane {pane_id}: {e}");
     }
 
     Ok(())

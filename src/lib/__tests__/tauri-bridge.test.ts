@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { invoke, mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { tauriBridge } from '../tauri-bridge';
@@ -104,6 +105,30 @@ describe('tauriBridge', () => {
     });
   });
 
+  describe('workspace.rename', () => {
+    it('calls invoke with workspace_rename and args', async () => {
+      const mockWorkspace = {
+        id: 'ws-1',
+        name: 'New Name',
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 1000,
+      };
+      mockInvoke('workspace_rename', () => mockWorkspace);
+
+      const result = await tauriBridge.workspace.rename('ws-1', 'New Name');
+
+      expect(invoke).toHaveBeenCalledWith('workspace_rename', { workspaceId: 'ws-1', newName: 'New Name' });
+      expect(result).toEqual(mockWorkspace);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('workspace_rename', () => Promise.reject(new Error('rename failed')));
+
+      await expect(tauriBridge.workspace.rename('ws-1', 'New Name')).rejects.toThrow('rename failed');
+    });
+  });
+
   describe('workspace.list', () => {
     it('calls invoke with workspace_list', async () => {
       const mockList = [
@@ -115,6 +140,22 @@ describe('tauriBridge', () => {
 
       expect(invoke).toHaveBeenCalledWith('workspace_list');
       expect(result).toEqual(mockList);
+    });
+  });
+
+  describe('workspace.reorder', () => {
+    it('calls invoke with workspace_reorder and workspaceIds', async () => {
+      mockInvoke('workspace_reorder', () => undefined);
+
+      await tauriBridge.workspace.reorder(['ws-2', 'ws-1', 'ws-3']);
+
+      expect(invoke).toHaveBeenCalledWith('workspace_reorder', { workspaceIds: ['ws-2', 'ws-1', 'ws-3'] });
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('workspace_reorder', () => Promise.reject(new Error('reorder failed')));
+
+      await expect(tauriBridge.workspace.reorder(['ws-1'])).rejects.toThrow('reorder failed');
     });
   });
 

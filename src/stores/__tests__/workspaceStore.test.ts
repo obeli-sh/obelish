@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useWorkspaceStore } from '../workspaceStore';
 import type { WorkspaceInfo, SurfaceInfo, LayoutNode } from '../../lib/workspace-types';
@@ -25,7 +26,10 @@ describe('workspaceStore', () => {
     useWorkspaceStore.setState({
       workspaces: {},
       activeWorkspaceId: null,
+      orderedIds: [],
       browserPaneUrls: {},
+      paneNames: {},
+      _nextPaneNumber: 1,
     });
   });
 
@@ -67,7 +71,19 @@ describe('workspaceStore', () => {
       expect(state.workspaces['ws-1']).toBeUndefined();
     });
 
-    it('sets activeWorkspaceId to null if removed workspace was active', () => {
+    it('activates another workspace when the active workspace is removed', () => {
+      const ws1 = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      const ws2 = makeWorkspace('ws-2', [makeSurface('s-2', makeLeaf('p-2'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws1);
+      useWorkspaceStore.getState()._syncWorkspace(ws2);
+      useWorkspaceStore.getState()._setActiveWorkspace('ws-1');
+      useWorkspaceStore.getState()._removeWorkspace('ws-1');
+
+      const state = useWorkspaceStore.getState();
+      expect(state.activeWorkspaceId).toBe('ws-2');
+    });
+
+    it('sets activeWorkspaceId to null only when the last workspace is removed', () => {
       const ws = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
       useWorkspaceStore.getState()._syncWorkspace(ws);
       useWorkspaceStore.getState()._setActiveWorkspace('ws-1');
@@ -176,6 +192,111 @@ describe('workspaceStore', () => {
 
     it('returns null when no active workspace', () => {
       expect(useWorkspaceStore.getState().getActiveLayout()).toBeNull();
+    });
+  });
+
+  describe('paneNames', () => {
+    it('starts with empty paneNames and _nextPaneNumber = 1', () => {
+      const state = useWorkspaceStore.getState();
+      expect(state.paneNames).toEqual({});
+      expect(state._nextPaneNumber).toBe(1);
+    });
+
+    it('_getOrAssignPaneName assigns "Terminal N" for new pane', () => {
+      const name = useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      expect(name).toBe('Terminal 1');
+      expect(useWorkspaceStore.getState().paneNames['pane-1']).toBe('Terminal 1');
+      expect(useWorkspaceStore.getState()._nextPaneNumber).toBe(2);
+    });
+
+    it('_getOrAssignPaneName returns existing name for known pane', () => {
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      const name = useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      expect(name).toBe('Terminal 1');
+      expect(useWorkspaceStore.getState()._nextPaneNumber).toBe(2);
+    });
+
+    it('_getOrAssignPaneName increments counter for each new pane', () => {
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-2');
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-3');
+      expect(useWorkspaceStore.getState().paneNames['pane-1']).toBe('Terminal 1');
+      expect(useWorkspaceStore.getState().paneNames['pane-2']).toBe('Terminal 2');
+      expect(useWorkspaceStore.getState().paneNames['pane-3']).toBe('Terminal 3');
+      expect(useWorkspaceStore.getState()._nextPaneNumber).toBe(4);
+    });
+
+    it('_setPaneName sets name for a pane', () => {
+      useWorkspaceStore.getState()._setPaneName('pane-1', 'My Terminal');
+      expect(useWorkspaceStore.getState().paneNames['pane-1']).toBe('My Terminal');
+    });
+
+    it('_setPaneName overwrites existing name', () => {
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      useWorkspaceStore.getState()._setPaneName('pane-1', 'Renamed');
+      expect(useWorkspaceStore.getState().paneNames['pane-1']).toBe('Renamed');
+    });
+
+    it('_removePaneName deletes entry', () => {
+      useWorkspaceStore.getState()._getOrAssignPaneName('pane-1');
+      useWorkspaceStore.getState()._removePaneName('pane-1');
+      expect(useWorkspaceStore.getState().paneNames['pane-1']).toBeUndefined();
+    });
+
+    it('_removePaneName is no-op for unknown pane', () => {
+      useWorkspaceStore.getState()._removePaneName('unknown');
+      expect(useWorkspaceStore.getState().paneNames).toEqual({});
+    });
+  });
+
+  describe('orderedIds', () => {
+    it('starts with empty orderedIds', () => {
+      expect(useWorkspaceStore.getState().orderedIds).toEqual([]);
+    });
+
+    it('_syncWorkspace appends id to orderedIds', () => {
+      const ws = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+      expect(useWorkspaceStore.getState().orderedIds).toEqual(['ws-1']);
+    });
+
+    it('_syncWorkspace does not duplicate id in orderedIds', () => {
+      const ws = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+      const updated = { ...ws, name: 'Updated' };
+      useWorkspaceStore.getState()._syncWorkspace(updated);
+      expect(useWorkspaceStore.getState().orderedIds).toEqual(['ws-1']);
+    });
+
+    it('_removeWorkspace filters id from orderedIds', () => {
+      const ws1 = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      const ws2 = makeWorkspace('ws-2', [makeSurface('s-2', makeLeaf('p-2'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws1);
+      useWorkspaceStore.getState()._syncWorkspace(ws2);
+      useWorkspaceStore.getState()._removeWorkspace('ws-1');
+      expect(useWorkspaceStore.getState().orderedIds).toEqual(['ws-2']);
+    });
+
+    it('_reorderWorkspaces updates orderedIds', () => {
+      const ws1 = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      const ws2 = makeWorkspace('ws-2', [makeSurface('s-2', makeLeaf('p-2'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws1);
+      useWorkspaceStore.getState()._syncWorkspace(ws2);
+      useWorkspaceStore.getState()._reorderWorkspaces(['ws-2', 'ws-1']);
+      expect(useWorkspaceStore.getState().orderedIds).toEqual(['ws-2', 'ws-1']);
+    });
+
+    it('_removeWorkspace uses orderedIds for fallback active', () => {
+      const ws1 = makeWorkspace('ws-1', [makeSurface('s-1', makeLeaf('p-1'))]);
+      const ws2 = makeWorkspace('ws-2', [makeSurface('s-2', makeLeaf('p-2'))]);
+      const ws3 = makeWorkspace('ws-3', [makeSurface('s-3', makeLeaf('p-3'))]);
+      useWorkspaceStore.getState()._syncWorkspace(ws1);
+      useWorkspaceStore.getState()._syncWorkspace(ws2);
+      useWorkspaceStore.getState()._syncWorkspace(ws3);
+      useWorkspaceStore.getState()._reorderWorkspaces(['ws-3', 'ws-1', 'ws-2']);
+      useWorkspaceStore.getState()._setActiveWorkspace('ws-1');
+      useWorkspaceStore.getState()._removeWorkspace('ws-1');
+      expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-3');
     });
   });
 });

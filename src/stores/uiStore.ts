@@ -4,13 +4,20 @@ import { useWorkspaceStore } from './workspaceStore';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
 
+interface PaneDimensions {
+  width: number;
+  height: number;
+}
+
 interface UiStoreState {
   focusedPaneId: string | null;
+  focusedPaneDimensions: PaneDimensions | null;
   sidebarOpen: boolean;
   notificationPanelOpen: boolean;
   commandPaletteOpen: boolean;
   settingsOpen: boolean;
   setFocusedPane: (id: string | null) => void;
+  setFocusedPaneDimensions: (dims: PaneDimensions | null) => void;
   toggleSidebar: () => void;
   toggleNotificationPanel: () => void;
   toggleCommandPalette: () => void;
@@ -93,6 +100,7 @@ function findAdjacentPane(layout: LayoutNode, paneId: string, direction: Directi
 
 export const useUiStore = create<UiStoreState>((set, get) => ({
   focusedPaneId: null,
+  focusedPaneDimensions: null,
   sidebarOpen: true,
   notificationPanelOpen: false,
   commandPaletteOpen: false,
@@ -100,6 +108,10 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   setFocusedPane: (id) => {
     set({ focusedPaneId: id });
+  },
+
+  setFocusedPaneDimensions: (dims) => {
+    set({ focusedPaneDimensions: dims });
   },
 
   toggleSidebar: () => {

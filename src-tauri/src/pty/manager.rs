@@ -12,7 +12,8 @@ struct PtySession {
     writer: Option<Box<dyn Write + Send>>,
     child: Box<dyn crate::pty::backend::ChildController>,
     resizer: Box<dyn crate::pty::backend::PtyResizer>,
-    read_thread: Option<std::thread::JoinHandle<()>>,
+    /// Held to keep the read thread alive; dropped (detached) on session cleanup.
+    _read_thread: Option<std::thread::JoinHandle<()>>,
     size: PtySize,
 }
 
@@ -61,7 +62,7 @@ impl PtyManager {
             writer: Some(spawned.writer),
             child: spawned.child,
             resizer: spawned.resizer,
-            read_thread: Some(read_thread),
+            _read_thread: Some(read_thread),
             size,
         };
 
@@ -149,9 +150,12 @@ impl PtyManager {
             tracing::warn!(id, error = %e, "failed to kill PTY child process");
         }
         session.writer.take(); // Drop writer to help close PTY pipe
-        if let Some(thread) = session.read_thread.take() {
-            let _ = thread.join();
-        }
+
+        // Do NOT join the read thread — on Windows with ConPTY the pipe may not
+        // close promptly, causing thread.join() to block indefinitely and
+        // freezing the Tauri IPC command (which makes the UI unresponsive).
+        // Dropping the JoinHandle detaches the thread; it will exit on its own
+        // once the reader gets EOF or an error from the closed pipe.
 
         Ok(())
     }
@@ -695,6 +699,73 @@ mod tests {
             })
             .sum();
         assert_eq!(total_forwarded_bytes, osc_data.len());
+    }
+
+    #[test]
+    fn kill_returns_quickly_even_with_slow_reader() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let reader_running = Arc::new(AtomicBool::new(false));
+        let reader_running_clone = reader_running.clone();
+
+        // Reader that blocks until the shared flag is set to false
+        struct SlowReader {
+            running: Arc<AtomicBool>,
+        }
+
+        impl Read for SlowReader {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                self.running.store(true, Ordering::SeqCst);
+                // Block for a long time (simulating a stuck ConPTY pipe)
+                std::thread::sleep(Duration::from_secs(30));
+                Ok(0)
+            }
+        }
+
+        let emitter = Arc::new(MockEventEmitter::new());
+        let backend = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(move |_config| {
+                Ok(SpawnedPty {
+                    writer: Box::new(SinkWriter),
+                    reader: Box::new(SlowReader {
+                        running: reader_running_clone.clone(),
+                    }),
+                    child: Box::new(FakeChild::new()),
+                    resizer: Box::new(FakeResizer),
+                })
+            })),
+        });
+
+        let manager = PtyManager::new(backend);
+        let id = manager.spawn(default_config(), emitter).unwrap();
+
+        // Wait for the read thread to start blocking
+        for _ in 0..100 {
+            if reader_running.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            reader_running.load(Ordering::SeqCst),
+            "read thread should be running"
+        );
+
+        // kill() must return quickly (< 1 second) even though the reader is blocked
+        let start = std::time::Instant::now();
+        let result = manager.kill(&id);
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok());
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "kill() took {:?}, expected < 2s (should not block on thread.join)",
+            elapsed
+        );
+
+        // Session should be cleaned up
+        let inner = manager.inner.lock().unwrap();
+        assert!(!inner.sessions.contains_key(&id));
     }
 
     #[test]

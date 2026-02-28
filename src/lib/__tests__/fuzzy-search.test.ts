@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { fuzzySearchCommands } from '../fuzzy-search';
 import type { Command } from '../commands';

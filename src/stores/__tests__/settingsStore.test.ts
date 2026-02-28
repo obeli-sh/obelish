@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, type RustSettings } from '../settingsStore';
 import { getCommands } from '../../lib/commands';
@@ -22,7 +23,7 @@ describe('settingsStore', () => {
     useSettingsStore.setState({
       keybindings: buildDefaultKeybindings(),
       theme: 'dark',
-      terminalFontFamily: 'monospace',
+      terminalFontFamily: '"Fira Mono", monospace',
       terminalFontSize: 14,
       scrollbackLines: 5000,
     });
@@ -45,7 +46,7 @@ describe('settingsStore', () => {
     });
 
     it('has default terminal font family', () => {
-      expect(useSettingsStore.getState().terminalFontFamily).toBe('monospace');
+      expect(useSettingsStore.getState().terminalFontFamily).toBe('"Fira Mono", monospace');
     });
 
     it('has default terminal font size', () => {

@@ -1,4 +1,19 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { WorkspaceInfo, LayoutNode } from '../../lib/workspace-types';
 import { WorkspaceMetadata } from './WorkspaceMetadata';
 import { NotificationBadge } from '../notifications/NotificationBadge';
@@ -10,6 +25,8 @@ export interface SidebarProps {
   onWorkspaceSelect: (id: string) => void;
   onWorkspaceCreate: () => void;
   onWorkspaceClose: (id: string) => void;
+  onWorkspaceReorder: (orderedIds: string[]) => void;
+  onWorkspaceRename?: (id: string, newName: string) => void;
 }
 
 function findFirstLeafPaneId(node: LayoutNode): string | null {
@@ -23,15 +40,150 @@ function getWorkspacePaneId(ws: WorkspaceInfo): string | null {
   return findFirstLeafPaneId(surface.layout);
 }
 
+interface SortableWorkspaceItemProps {
+  ws: WorkspaceInfo;
+  index: number;
+  activeWorkspaceId: string;
+  focusedIndex: number;
+  editingWorkspaceId: string | null;
+  onWorkspaceClick: (id: string, index: number) => void;
+  onWorkspaceClose: (id: string) => void;
+  onStartEditing: (id: string) => void;
+  onFinishEditing: () => void;
+  onWorkspaceRename?: (id: string, newName: string) => void;
+}
+
+function SortableWorkspaceItem({
+  ws,
+  index,
+  activeWorkspaceId,
+  focusedIndex,
+  editingWorkspaceId,
+  onWorkspaceClick,
+  onWorkspaceClose,
+  onStartEditing,
+  onFinishEditing,
+  onWorkspaceRename,
+}: SortableWorkspaceItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ws.id });
+
+  // Exclude role from attributes to preserve <li> listitem semantics
+  const { role: _role, ...restAttributes } = attributes;
+
+  const paneId = getWorkspacePaneId(ws);
+  const isEditing = editingWorkspaceId === ws.id;
+  const [editValue, setEditValue] = useState(ws.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (isEditing) {
+      setEditValue(ws.name);
+      cancelledRef.current = false;
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing, ws.name]);
+
+  const handleSubmit = useCallback(() => {
+    if (cancelledRef.current) return;
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== ws.name) {
+      onWorkspaceRename?.(ws.id, trimmed);
+    }
+    onFinishEditing();
+  }, [editValue, ws.id, ws.name, onWorkspaceRename, onFinishEditing]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelledRef.current = true;
+      onFinishEditing();
+    }
+  }, [handleSubmit, onFinishEditing]);
+
+  const style: React.CSSProperties = {
+    ...itemStyle,
+    ...(ws.id === activeWorkspaceId ? activeItemStyle : {}),
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      {...restAttributes}
+      {...listeners}
+      data-active={ws.id === activeWorkspaceId ? 'true' : 'false'}
+      data-focused={index === focusedIndex ? 'true' : 'false'}
+      style={style}
+    >
+      <div style={itemContentStyle}>
+        <div style={itemHeaderStyle}>
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              style={renameInputStyle}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={handleSubmit}
+            />
+          ) : (
+            <button
+              style={nameButtonStyle}
+              onClick={() => onWorkspaceClick(ws.id, index)}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                onStartEditing(ws.id);
+              }}
+            >
+              {ws.name}
+            </button>
+          )}
+          <button
+            aria-label={`Close ${ws.name}`}
+            style={closeButtonStyle}
+            onClick={() => onWorkspaceClose(ws.id)}
+          >
+            ×
+          </button>
+        </div>
+        {paneId && <WorkspaceMetadata paneId={paneId} />}
+      </div>
+    </li>
+  );
+}
+
 export function Sidebar({
   workspaces,
   activeWorkspaceId,
   onWorkspaceSelect,
   onWorkspaceCreate,
   onWorkspaceClose,
+  onWorkspaceReorder,
+  onWorkspaceRename,
 }: SidebarProps) {
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -59,6 +211,25 @@ export function Sidebar({
     [onWorkspaceSelect],
   );
 
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const oldIndex = workspaces.findIndex((ws) => ws.id === active.id);
+      const newIndex = workspaces.findIndex((ws) => ws.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const newOrder = arrayMove(
+        workspaces.map((ws) => ws.id),
+        oldIndex,
+        newIndex,
+      );
+      onWorkspaceReorder(newOrder);
+    },
+    [workspaces, onWorkspaceReorder],
+  );
+
   const unreadCount = useNotificationStore((s) => s.unreadCount());
 
   return (
@@ -67,41 +238,34 @@ export function Sidebar({
         <span>Workspaces</span>
         <NotificationBadge count={unreadCount} />
       </div>
-      <ul ref={listRef} role="list" style={listStyle}>
-        {workspaces.map((ws, index) => {
-          const paneId = getWorkspacePaneId(ws);
-          return (
-            <li
-              key={ws.id}
-              data-active={ws.id === activeWorkspaceId ? 'true' : 'false'}
-              data-focused={index === focusedIndex ? 'true' : 'false'}
-              style={{
-                ...itemStyle,
-                ...(ws.id === activeWorkspaceId ? activeItemStyle : {}),
-              }}
-            >
-              <div style={itemContentStyle}>
-                <div style={itemHeaderStyle}>
-                  <button
-                    style={nameButtonStyle}
-                    onClick={() => handleWorkspaceClick(ws.id, index)}
-                  >
-                    {ws.name}
-                  </button>
-                  <button
-                    aria-label={`Close ${ws.name}`}
-                    style={closeButtonStyle}
-                    onClick={() => onWorkspaceClose(ws.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-                {paneId && <WorkspaceMetadata paneId={paneId} />}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={workspaces.map((ws) => ws.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul ref={listRef} role="list" style={listStyle}>
+            {workspaces.map((ws, index) => (
+              <SortableWorkspaceItem
+                key={ws.id}
+                ws={ws}
+                index={index}
+                activeWorkspaceId={activeWorkspaceId}
+                focusedIndex={focusedIndex}
+                editingWorkspaceId={editingWorkspaceId}
+                onWorkspaceClick={handleWorkspaceClick}
+                onWorkspaceClose={onWorkspaceClose}
+                onStartEditing={setEditingWorkspaceId}
+                onFinishEditing={() => setEditingWorkspaceId(null)}
+                onWorkspaceRename={onWorkspaceRename}
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
       <button
         aria-label="New Workspace"
         style={createButtonStyle}
@@ -169,6 +333,18 @@ const nameButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   padding: '4px',
   font: 'inherit',
+};
+
+const renameInputStyle: React.CSSProperties = {
+  flex: 1,
+  background: '#313244',
+  border: '1px solid #585b70',
+  color: 'inherit',
+  textAlign: 'left',
+  padding: '3px',
+  font: 'inherit',
+  outline: 'none',
+  borderRadius: '2px',
 };
 
 const closeButtonStyle: React.CSSProperties = {

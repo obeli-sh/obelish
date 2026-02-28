@@ -23,7 +23,10 @@ export const tauriBridge = {
       invoke<WorkspaceInfo>('workspace_create', args ?? {}),
     close: (workspaceId: string) =>
       invoke<void>('workspace_close', { workspaceId }),
+    rename: (workspaceId: string, newName: string) =>
+      invoke<WorkspaceInfo>('workspace_rename', { workspaceId, newName }),
     list: () => invoke<WorkspaceInfo[]>('workspace_list'),
+    reorder: (workspaceIds: string[]) => invoke<void>('workspace_reorder', { workspaceIds }),
   },
   pane: {
     split: (paneId: string, direction: SplitDirection, shell?: string) =>

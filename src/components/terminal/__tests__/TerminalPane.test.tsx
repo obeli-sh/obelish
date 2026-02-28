@@ -18,8 +18,8 @@ describe('TerminalPane', () => {
     (Terminal as unknown as { instances: unknown[] }).instances = [];
     clearInvokeMocks();
     clearEventMocks();
-    mockInvoke('pty_write', () => undefined);
-    mockInvoke('pty_resize', () => undefined);
+    mockInvoke('pty_write', () => Promise.resolve());
+    mockInvoke('pty_resize', () => Promise.resolve());
     mockInvoke('scrollback_load', () => null);
     mockInvoke('scrollback_save', () => undefined);
   });
@@ -92,5 +92,28 @@ describe('TerminalPane', () => {
 
     // onReady should still only have been called once
     expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not crash when terminal.focus throws', async () => {
+    const { rerender } = render(
+      <TerminalPane paneId="pane-1" ptyId="pty-1" isActive={false} />
+    );
+
+    const mockTerminal = Terminal as unknown as { instances: Terminal[] };
+    await vi.waitFor(() => {
+      expect(mockTerminal.instances.length).toBeGreaterThan(0);
+    });
+
+    const instance = mockTerminal.instances[0];
+
+    // Make focus throw (simulates disposed terminal)
+    (instance.focus as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('Terminal is disposed');
+    });
+
+    // This should not throw
+    expect(() => {
+      rerender(<TerminalPane paneId="pane-1" ptyId="pty-1" isActive={true} />);
+    }).not.toThrow();
   });
 });
