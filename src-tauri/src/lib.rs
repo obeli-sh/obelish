@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod error;
 pub mod pty;
+pub mod workspace;
 
 use commands::AppState;
 
@@ -13,6 +14,11 @@ pub fn run() {
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,
+            commands::workspace_create,
+            commands::workspace_close,
+            commands::workspace_list,
+            commands::pane_split,
+            commands::pane_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

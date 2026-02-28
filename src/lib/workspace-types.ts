@@ -1,0 +1,48 @@
+export interface WorkspaceInfo {
+  id: string;
+  name: string;
+  surfaces: SurfaceInfo[];
+  activeSurfaceIndex: number;
+  createdAt: number;
+}
+
+export interface SurfaceInfo {
+  id: string;
+  name: string;
+  layout: LayoutNode;
+}
+
+export type LayoutNode = LeafNode | SplitNode;
+
+export interface LeafNode {
+  type: 'leaf';
+  paneId: string;
+}
+
+export interface SplitNode {
+  type: 'split';
+  direction: SplitDirection;
+  children: [LayoutNode, LayoutNode];
+  sizes: [number, number];
+}
+
+export type SplitDirection = 'horizontal' | 'vertical';
+
+export interface PaneInfo {
+  id: string;
+  ptyId: string;
+  paneType: PaneType;
+  cwd: string | null;
+}
+
+export type PaneType = 'terminal' | 'browser';
+
+export interface PaneSplitResult {
+  paneId: string;
+  ptyId: string;
+}
+
+export interface WorkspaceChangedEvent {
+  workspaceId: string;
+  workspace: WorkspaceInfo;
+}

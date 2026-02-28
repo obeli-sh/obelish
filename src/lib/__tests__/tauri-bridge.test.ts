@@ -53,4 +53,108 @@ describe('tauriBridge', () => {
       expect(invoke).toHaveBeenCalledWith('pty_kill', { ptyId: 'pty-1' });
     });
   });
+
+  describe('workspace.create', () => {
+    it('calls invoke with workspace_create and args', async () => {
+      const mockWorkspace = {
+        id: 'ws-1',
+        name: 'My Workspace',
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 1000,
+      };
+      mockInvoke('workspace_create', () => mockWorkspace);
+
+      const result = await tauriBridge.workspace.create({ name: 'My Workspace', cwd: '/home' });
+
+      expect(invoke).toHaveBeenCalledWith('workspace_create', { name: 'My Workspace', cwd: '/home' });
+      expect(result).toEqual(mockWorkspace);
+    });
+
+    it('calls invoke with empty object when no args', async () => {
+      const mockWorkspace = {
+        id: 'ws-2',
+        name: 'default',
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 2000,
+      };
+      mockInvoke('workspace_create', () => mockWorkspace);
+
+      const result = await tauriBridge.workspace.create();
+
+      expect(invoke).toHaveBeenCalledWith('workspace_create', {});
+      expect(result).toEqual(mockWorkspace);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('workspace_create', () => Promise.reject(new Error('create failed')));
+
+      await expect(tauriBridge.workspace.create()).rejects.toThrow('create failed');
+    });
+  });
+
+  describe('workspace.close', () => {
+    it('calls invoke with workspace_close and workspaceId', async () => {
+      mockInvoke('workspace_close', () => undefined);
+
+      await tauriBridge.workspace.close('ws-1');
+
+      expect(invoke).toHaveBeenCalledWith('workspace_close', { workspaceId: 'ws-1' });
+    });
+  });
+
+  describe('workspace.list', () => {
+    it('calls invoke with workspace_list', async () => {
+      const mockList = [
+        { id: 'ws-1', name: 'Workspace 1', surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
+      ];
+      mockInvoke('workspace_list', () => mockList);
+
+      const result = await tauriBridge.workspace.list();
+
+      expect(invoke).toHaveBeenCalledWith('workspace_list');
+      expect(result).toEqual(mockList);
+    });
+  });
+
+  describe('pane.split', () => {
+    it('calls invoke with pane_split and args', async () => {
+      const mockResult = { paneId: 'pane-2', ptyId: 'pty-2' };
+      mockInvoke('pane_split', () => mockResult);
+
+      const result = await tauriBridge.pane.split('pane-1', 'horizontal', '/bin/zsh');
+
+      expect(invoke).toHaveBeenCalledWith('pane_split', {
+        paneId: 'pane-1',
+        direction: 'horizontal',
+        shell: '/bin/zsh',
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('calls invoke without shell when not provided', async () => {
+      const mockResult = { paneId: 'pane-2', ptyId: 'pty-2' };
+      mockInvoke('pane_split', () => mockResult);
+
+      const result = await tauriBridge.pane.split('pane-1', 'vertical');
+
+      expect(invoke).toHaveBeenCalledWith('pane_split', {
+        paneId: 'pane-1',
+        direction: 'vertical',
+        shell: undefined,
+      });
+      expect(result).toEqual(mockResult);
+    });
+  });
+
+  describe('pane.close', () => {
+    it('calls invoke with pane_close and paneId', async () => {
+      mockInvoke('pane_close', () => undefined);
+
+      await tauriBridge.pane.close('pane-1');
+
+      expect(invoke).toHaveBeenCalledWith('pane_close', { paneId: 'pane-1' });
+    });
+  });
 });

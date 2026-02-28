@@ -30,6 +30,10 @@ export default defineConfig({
         __dirname,
         "src/__mocks__/@xterm/addon-webgl.ts",
       ),
+      "react-resizable-panels": path.resolve(
+        __dirname,
+        "src/__mocks__/react-resizable-panels.tsx",
+      ),
     },
     coverage: {
       provider: "v8",

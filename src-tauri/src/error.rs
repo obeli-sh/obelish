@@ -2,6 +2,20 @@ use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub enum WorkspaceError {
+    #[error("workspace not found: {id}")]
+    NotFound { id: String },
+    #[error("pane not found: {id}")]
+    PaneNotFound { id: String },
+    #[error("surface not found: {id}")]
+    SurfaceNotFound { id: String },
+    #[error("invalid split: {reason}")]
+    InvalidSplit { reason: String },
+    #[error("cannot close last workspace")]
+    LastWorkspace,
+}
+
+#[derive(Debug, Error)]
 pub enum PtyError {
     #[error("PTY not found: {id}")]
     NotFound { id: String },
@@ -21,6 +35,8 @@ pub enum PtyError {
 pub enum BackendError {
     #[error(transparent)]
     Pty(#[from] PtyError),
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
 }
 
 impl Serialize for BackendError {
@@ -36,6 +52,17 @@ impl Serialize for BackendError {
                     PtyError::ResizeFailed(_) => "ResizeFailed",
                     PtyError::AlreadyTerminated { .. } => "AlreadyTerminated",
                     PtyError::KillFailed(_) => "KillFailed",
+                };
+                state.serialize_field("kind", kind)?;
+                state.serialize_field("message", &e.to_string())?;
+            }
+            BackendError::Workspace(e) => {
+                let kind = match e {
+                    WorkspaceError::NotFound { .. } => "WorkspaceNotFound",
+                    WorkspaceError::PaneNotFound { .. } => "PaneNotFound",
+                    WorkspaceError::SurfaceNotFound { .. } => "SurfaceNotFound",
+                    WorkspaceError::InvalidSplit { .. } => "InvalidSplit",
+                    WorkspaceError::LastWorkspace => "LastWorkspace",
                 };
                 state.serialize_field("kind", kind)?;
                 state.serialize_field("message", &e.to_string())?;
