@@ -20,6 +20,13 @@ fn read_json(path: &Path) -> serde_json::Value {
         .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
 }
 
+fn read_yaml(path: &Path) -> serde_yaml::Value {
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    serde_yaml::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
+}
+
 // --- Workspace release profile tests ---
 
 #[test]
@@ -190,48 +197,57 @@ fn release_workflow_exists() {
 
 #[test]
 fn release_workflow_triggers_on_tags() {
-    let root = workspace_root();
-    let content = fs::read_to_string(root.join(".github/workflows/release.yml"))
-        .expect("Should read release.yml");
-
+    let workflow = read_yaml(&workspace_root().join(".github/workflows/release.yml"));
+    let tags = workflow["on"]["push"]["tags"]
+        .as_sequence()
+        .expect("on.push.tags should be a sequence");
+    let tag_patterns: Vec<&str> = tags.iter().filter_map(|t| t.as_str()).collect();
     assert!(
-        content.contains("tags:"),
-        "Release workflow should trigger on tags"
-    );
-    assert!(
-        content.contains("v*") || content.contains("'v*'") || content.contains("\"v*\""),
-        "Release workflow should trigger on v* tags"
+        tag_patterns.iter().any(|t| t.contains("v*")),
+        "Release workflow should trigger on v* tags, got: {:?}",
+        tag_patterns
     );
 }
 
 #[test]
 fn release_workflow_builds_all_platforms() {
-    let root = workspace_root();
-    let content = fs::read_to_string(root.join(".github/workflows/release.yml"))
-        .expect("Should read release.yml");
+    let workflow = read_yaml(&workspace_root().join(".github/workflows/release.yml"));
+
+    // Check build-tauri job matrix for all platforms
+    let matrix = &workflow["jobs"]["build-tauri"]["strategy"]["matrix"]["include"];
+    let platforms: Vec<&str> = matrix
+        .as_sequence()
+        .expect("build-tauri matrix.include should be a sequence")
+        .iter()
+        .filter_map(|entry| entry["platform"].as_str())
+        .collect();
 
     assert!(
-        content.contains("ubuntu") || content.contains("linux"),
-        "Release workflow should build on Linux"
+        platforms.iter().any(|p| p.contains("ubuntu")),
+        "Release workflow should build on Linux, got: {:?}",
+        platforms
     );
     assert!(
-        content.contains("macos"),
-        "Release workflow should build on macOS"
+        platforms.iter().any(|p| p.contains("macos")),
+        "Release workflow should build on macOS, got: {:?}",
+        platforms
     );
     assert!(
-        content.contains("windows"),
-        "Release workflow should build on Windows"
+        platforms.iter().any(|p| p.contains("windows")),
+        "Release workflow should build on Windows, got: {:?}",
+        platforms
     );
 }
 
 #[test]
 fn ci_workflow_supports_workflow_call() {
-    let root = workspace_root();
-    let content =
-        fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("Should read ci.yml");
-
+    let workflow = read_yaml(&workspace_root().join(".github/workflows/ci.yml"));
+    let on = workflow["on"]
+        .as_mapping()
+        .expect("on: should be a mapping");
+    let has_workflow_call = on.keys().any(|k| k.as_str() == Some("workflow_call"));
     assert!(
-        content.contains("workflow_call"),
+        has_workflow_call,
         "CI workflow should support workflow_call trigger"
     );
 }

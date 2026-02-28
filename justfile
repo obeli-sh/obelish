@@ -25,13 +25,11 @@ coverage:
 bench:
     cargo bench -p obelisk
 
-# Build for production
-build:
-    bun tauri build
-
-# Build release Tauri app
+# Build Tauri app for production
 release:
     bun tauri build
+
+alias build := release
 
 # Build release CLI binary
 release-cli:
