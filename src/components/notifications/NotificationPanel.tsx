@@ -19,9 +19,9 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
-  if (!isOpen) return null;
-
   const notifications = useNotificationStore((s) => s.notifications);
+
+  if (!isOpen) return null;
 
   return (
     <div data-testid="notification-panel" style={panelStyle}>

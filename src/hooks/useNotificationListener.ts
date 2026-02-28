@@ -1,14 +1,38 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useNotificationStore } from '../stores/notificationStore';
-import type { Notification } from '../lib/workspace-types';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import type { Notification, LayoutNode } from '../lib/workspace-types';
 
 interface NotificationRawPayload {
-  pane_id: string;
-  workspace_id: string;
-  osc_type: number;
+  ptyId: string;
+  oscType: number;
   title: string;
   body: string | null;
+}
+
+function findPaneAndWorkspace(
+  workspaces: Record<string, { id: string; surfaces: { layout: LayoutNode }[] }>,
+  ptyId: string,
+): { paneId: string; workspaceId: string } | null {
+  for (const ws of Object.values(workspaces)) {
+    for (const surface of ws.surfaces) {
+      const paneId = findPaneInLayout(surface.layout, ptyId);
+      if (paneId) return { paneId, workspaceId: ws.id };
+    }
+  }
+  return null;
+}
+
+function findPaneInLayout(layout: LayoutNode, ptyId: string): string | null {
+  if (layout.type === 'leaf') {
+    return layout.ptyId === ptyId ? layout.paneId : null;
+  }
+  for (const child of layout.children) {
+    const found = findPaneInLayout(child, ptyId);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function useNotificationListener(): void {
@@ -21,11 +45,14 @@ export function useNotificationListener(): void {
         if (cancelled) return;
 
         const payload = event.payload;
+        const workspaces = useWorkspaceStore.getState().workspaces;
+        const mapping = findPaneAndWorkspace(workspaces, payload.ptyId);
+
         const notification: Notification = {
           id: crypto.randomUUID(),
-          paneId: payload.pane_id,
-          workspaceId: payload.workspace_id,
-          oscType: payload.osc_type,
+          paneId: mapping?.paneId ?? payload.ptyId,
+          workspaceId: mapping?.workspaceId ?? '',
+          oscType: payload.oscType,
           title: payload.title,
           body: payload.body,
           timestamp: Date.now(),

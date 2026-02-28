@@ -14,6 +14,8 @@ enum State {
     EscInPayload,
 }
 
+const MAX_PAYLOAD_SIZE: usize = 64 * 1024; // 64KB
+
 pub struct OscParser {
     state: State,
     osc_code: String,
@@ -74,6 +76,9 @@ impl OscParser {
                         self.state = State::Normal;
                     } else if byte == 0x1b {
                         self.state = State::EscInPayload;
+                    } else if self.payload.len() >= MAX_PAYLOAD_SIZE {
+                        // Payload too large, abort OSC sequence
+                        self.state = State::Normal;
                     } else {
                         self.payload.push(byte as char);
                     }
@@ -388,6 +393,32 @@ mod tests {
         let input: Vec<u8> = (0..=255).collect();
         let (forwarded, _) = parser.feed(&input);
         assert_eq!(forwarded.len(), input.len());
+    }
+
+    #[test]
+    fn payload_exceeding_max_size_aborts_sequence() {
+        let mut parser = OscParser::new();
+        // Payload larger than MAX_PAYLOAD_SIZE (64KB)
+        let payload = "x".repeat(MAX_PAYLOAD_SIZE + 100);
+        let input_str = format!("\x1b]9;{}\x07", payload);
+        let input = input_str.as_bytes();
+        let (forwarded, notifications) = parser.feed(input);
+        assert_eq!(forwarded.len(), input.len());
+        // Sequence should be aborted, no notification extracted
+        assert!(notifications.is_empty());
+    }
+
+    #[test]
+    fn payload_at_max_size_still_works() {
+        let mut parser = OscParser::new();
+        // Payload exactly at MAX_PAYLOAD_SIZE - 1 (last byte that fits)
+        let payload = "x".repeat(MAX_PAYLOAD_SIZE - 1);
+        let input_str = format!("\x1b]9;{}\x07", payload);
+        let input = input_str.as_bytes();
+        let (forwarded, notifications) = parser.feed(input);
+        assert_eq!(forwarded.len(), input.len());
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].title.len(), MAX_PAYLOAD_SIZE - 1);
     }
 
     #[test]
