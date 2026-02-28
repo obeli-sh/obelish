@@ -50,9 +50,9 @@ pub fn run() {
             let settings_manager = SettingsManager::new(settings_backend);
 
             #[cfg(unix)]
-            let socket_path = compute_socket_path();
+            let socket_path = Some(compute_socket_path());
             #[cfg(not(unix))]
-            let socket_path = std::path::PathBuf::new();
+            let socket_path: Option<std::path::PathBuf> = None;
 
             let app_state = AppState::new(
                 session_manager,
@@ -64,9 +64,10 @@ pub fn run() {
 
             // Start IPC server on Unix platforms
             #[cfg(unix)]
-            {
+            if let Some(socket_path) = socket_path {
                 let state = app.state::<AppState>();
-                let ipc_context = commands::IpcAppContext::from_app_state(&state);
+                let ipc_context =
+                    commands::IpcAppContext::from_app_state(&state, socket_path.clone());
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     match ipc_server::IpcServer::start(ipc_context, socket_path).await {
@@ -75,7 +76,8 @@ pub fn run() {
                                 "IPC server started at {}",
                                 server.socket_path().display()
                             );
-                            app_handle.manage(server);
+                            let state = app_handle.state::<AppState>();
+                            state.ipc_server.lock().unwrap().replace(server);
                         }
                         Err(e) => {
                             tracing::error!("Failed to start IPC server: {e}");
@@ -136,10 +138,12 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+
                 // Stop IPC server
                 #[cfg(unix)]
                 {
-                    if let Some(server) = app_handle.try_state::<ipc_server::IpcServer>() {
+                    if let Some(server) = state.ipc_server.lock().unwrap().take() {
                         tauri::async_runtime::block_on(async {
                             if let Err(e) = server.stop().await {
                                 tracing::error!("Failed to stop IPC server: {e}");
@@ -147,8 +151,6 @@ pub fn run() {
                         });
                     }
                 }
-
-                let state = app_handle.state::<AppState>();
                 let session = {
                     let ws = state
                         .workspace_state

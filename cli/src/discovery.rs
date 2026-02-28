@@ -45,8 +45,10 @@ fn discovery_path() -> PathBuf {
 }
 
 fn is_pid_alive(pid: u32) -> bool {
-    // Use kill(pid, 0) to check if a process exists (works on Linux and macOS)
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    // Use kill(pid, 0) to check if a process exists (works on Linux and macOS).
+    // EPERM means the process exists but belongs to another user — still alive.
+    let ret = unsafe { libc::kill(pid as i32, 0) };
+    ret == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(test)]
@@ -62,6 +64,12 @@ mod tests {
     #[test]
     fn current_pid_is_alive() {
         assert!(is_pid_alive(std::process::id()));
+    }
+
+    #[test]
+    fn is_pid_alive_pid_1_returns_true() {
+        // PID 1 (init/systemd) always exists; kill(1, 0) returns EPERM for non-root
+        assert!(is_pid_alive(1));
     }
 
     #[test]

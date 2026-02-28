@@ -24,7 +24,9 @@ pub struct AppState {
     pub notification_store: Arc<RwLock<NotificationStore>>,
     pub settings_manager: SettingsManager,
     pub server_start_time: Instant,
-    pub ipc_socket_path: PathBuf,
+    pub ipc_socket_path: Option<PathBuf>,
+    #[cfg(unix)]
+    pub ipc_server: std::sync::Mutex<Option<crate::ipc_server::IpcServer>>,
 }
 
 impl AppState {
@@ -32,7 +34,7 @@ impl AppState {
         session_manager: SessionManager,
         scrollback_storage: ScrollbackStorage,
         settings_manager: SettingsManager,
-        ipc_socket_path: PathBuf,
+        ipc_socket_path: Option<PathBuf>,
     ) -> Self {
         Self {
             pty_manager: PtyManager::new(Arc::new(crate::pty::backend::RealPtyBackend::new())),
@@ -43,6 +45,8 @@ impl AppState {
             settings_manager,
             server_start_time: Instant::now(),
             ipc_socket_path,
+            #[cfg(unix)]
+            ipc_server: std::sync::Mutex::new(None),
         }
     }
 }
@@ -59,13 +63,13 @@ pub struct IpcAppContext {
 
 #[cfg(unix)]
 impl IpcAppContext {
-    pub fn from_app_state(state: &AppState) -> Self {
+    pub fn from_app_state(state: &AppState, socket_path: PathBuf) -> Self {
         Self {
             workspace_state: state.workspace_state.clone(),
             notification_store: state.notification_store.clone(),
             session_manager: state.session_manager.clone(),
             server_start_time: state.server_start_time,
-            ipc_socket_path: state.ipc_socket_path.clone(),
+            ipc_socket_path: socket_path,
         }
     }
 }
@@ -609,7 +613,7 @@ mod ipc_context_tests {
             session_manager,
             scrollback_storage,
             settings_manager,
-            socket_path,
+            Some(socket_path),
         )
     }
 
@@ -624,7 +628,7 @@ mod ipc_context_tests {
             ws.create_workspace("Test".to_string(), "p1".to_string(), "pty1".to_string());
         }
 
-        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, tmp.path().join("test.sock"));
 
         // IpcAppContext should see the same workspace
         let ws = ipc_ctx.workspace_state().read().unwrap();
@@ -652,7 +656,7 @@ mod ipc_context_tests {
             });
         }
 
-        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, tmp.path().join("test.sock"));
 
         // IpcAppContext should see the same notification
         let store = ipc_ctx.notification_store().read().unwrap();
@@ -664,7 +668,7 @@ mod ipc_context_tests {
     fn ipc_app_context_returns_correct_socket_path() {
         let tmp = TempDir::new().unwrap();
         let app_state = make_app_state(&tmp);
-        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, tmp.path().join("test.sock"));
 
         assert_eq!(ipc_ctx.socket_path(), tmp.path().join("test.sock"));
     }
@@ -674,7 +678,7 @@ mod ipc_context_tests {
         let tmp = TempDir::new().unwrap();
         let app_state = make_app_state(&tmp);
         let before = Instant::now();
-        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, tmp.path().join("test.sock"));
         // start_time should be very close to now (set during AppState::new)
         let elapsed = before.elapsed();
         let ctx_elapsed = ipc_ctx.server_start_time().elapsed();
@@ -685,7 +689,7 @@ mod ipc_context_tests {
     fn ipc_app_context_session_manager_works() {
         let tmp = TempDir::new().unwrap();
         let app_state = make_app_state(&tmp);
-        let ipc_ctx = IpcAppContext::from_app_state(&app_state);
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, tmp.path().join("test.sock"));
 
         // Session manager should be functional
         assert!(!ipc_ctx.session_manager().is_dirty());
@@ -695,13 +699,29 @@ mod ipc_context_tests {
         assert!(app_state.session_manager.is_dirty());
     }
 
+    #[test]
+    fn app_state_ipc_server_starts_as_none() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        assert!(app_state.ipc_server.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn app_state_ipc_socket_path_is_some() {
+        let tmp = TempDir::new().unwrap();
+        let app_state = make_app_state(&tmp);
+        assert_eq!(
+            app_state.ipc_socket_path,
+            Some(tmp.path().join("test.sock"))
+        );
+    }
+
     #[tokio::test]
     async fn ipc_server_starts_with_app_context() {
         let tmp = TempDir::new().unwrap();
         let app_state = make_app_state(&tmp);
         let socket_path = tmp.path().join("ipc-test.sock");
-        let mut ipc_ctx = IpcAppContext::from_app_state(&app_state);
-        ipc_ctx.ipc_socket_path = socket_path.clone();
+        let ipc_ctx = IpcAppContext::from_app_state(&app_state, socket_path.clone());
 
         let server = crate::ipc_server::IpcServer::start(ipc_ctx, socket_path.clone())
             .await

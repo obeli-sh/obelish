@@ -72,6 +72,9 @@ fn handle_workspace_create<C: IpcContext>(
         .write()
         .expect("workspace state lock poisoned");
     let workspace = ws.create_workspace(name, pane_id, pty_id);
+    drop(ws);
+
+    context.session_manager().mark_dirty();
 
     RpcResponse::success(id, serde_json::to_value(workspace).unwrap())
 }
@@ -97,7 +100,11 @@ fn handle_workspace_close<C: IpcContext>(
         .expect("workspace state lock poisoned");
 
     match ws.close_workspace(&close_params.id) {
-        Ok(_pty_ids) => RpcResponse::success(id, serde_json::json!(null)),
+        Ok(_pty_ids) => {
+            drop(ws);
+            context.session_manager().mark_dirty();
+            RpcResponse::success(id, serde_json::json!(null))
+        }
         Err(crate::error::WorkspaceError::NotFound { .. }) => RpcResponse::error(
             id,
             ERR_WORKSPACE_NOT_FOUND,
@@ -449,6 +456,46 @@ mod tests {
         let loaded = ctx.session_manager.load().unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().workspaces.len(), 1);
+    }
+
+    #[test]
+    fn workspace_create_marks_session_dirty() {
+        let ctx = TestContext::new();
+        assert!(!ctx.session_manager.is_dirty());
+        let resp = dispatch(METHOD_WORKSPACE_CREATE, None, &ctx, serde_json::json!(20));
+        assert!(resp.error.is_none());
+        assert!(
+            ctx.session_manager.is_dirty(),
+            "session should be marked dirty after workspace.create"
+        );
+    }
+
+    #[test]
+    fn workspace_close_marks_session_dirty() {
+        let ctx = TestContext::new();
+        // Create two workspaces so we can close one
+        let ws1_id;
+        {
+            let mut ws = ctx.workspace_state.write().unwrap();
+            ws1_id = ws
+                .create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string())
+                .id;
+            ws.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+        }
+
+        assert!(!ctx.session_manager.is_dirty());
+        let params = serde_json::json!({"id": ws1_id});
+        let resp = dispatch(
+            METHOD_WORKSPACE_CLOSE,
+            Some(params),
+            &ctx,
+            serde_json::json!(21),
+        );
+        assert!(resp.error.is_none());
+        assert!(
+            ctx.session_manager.is_dirty(),
+            "session should be marked dirty after workspace.close"
+        );
     }
 
     #[test]

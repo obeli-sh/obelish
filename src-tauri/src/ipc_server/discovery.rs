@@ -60,8 +60,10 @@ fn read_entries_from(path: &Path) -> Result<Vec<DiscoveryEntry>, std::io::Error>
 }
 
 fn is_pid_alive(pid: u32) -> bool {
-    // Use kill(pid, 0) to check if a process exists (works on Linux and macOS)
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    // Use kill(pid, 0) to check if a process exists (works on Linux and macOS).
+    // EPERM means the process exists but belongs to another user — still alive.
+    let ret = unsafe { libc::kill(pid as i32, 0) };
+    ret == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(test)]
@@ -122,6 +124,12 @@ mod tests {
     fn is_pid_alive_dead_pid() {
         // PID 999999999 almost certainly doesn't exist
         assert!(!is_pid_alive(999_999_999));
+    }
+
+    #[test]
+    fn is_pid_alive_pid_1_returns_true() {
+        // PID 1 (init/systemd) always exists; kill(1, 0) returns EPERM for non-root
+        assert!(is_pid_alive(1));
     }
 
     #[test]
