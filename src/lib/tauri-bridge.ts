@@ -34,4 +34,8 @@ export const tauriBridge = {
     save: () => invoke<void>('session_save'),
     restore: () => invoke<WorkspaceInfo[]>('session_restore'),
   },
+  scrollback: {
+    save: (paneId: string, data: string) => invoke<void>('scrollback_save', { paneId, data }),
+    load: (paneId: string) => invoke<string | null>('scrollback_load', { paneId }),
+  },
 } as const;

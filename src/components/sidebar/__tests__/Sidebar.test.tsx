@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { emitMockEvent, clearEventMocks } from '@tauri-apps/api/event';
+import { act } from '@testing-library/react';
 import { Sidebar } from '../Sidebar';
-import type { WorkspaceInfo } from '../../../lib/workspace-types';
+import type { WorkspaceInfo, GitInfo } from '../../../lib/workspace-types';
 
 function makeWorkspace(id: string, name: string): WorkspaceInfo {
   return {
@@ -25,6 +27,7 @@ describe('Sidebar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearEventMocks();
   });
 
   it('renders workspace list', () => {
@@ -113,5 +116,22 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} workspaces={[]} />);
     expect(screen.getByRole('navigation')).toBeInTheDocument();
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it('renders WorkspaceMetadata for each workspace', async () => {
+    render(<Sidebar {...defaultProps} />);
+
+    const gitInfo: GitInfo = {
+      branch: 'feature-x',
+      isDirty: false,
+      ahead: 0,
+      behind: 0,
+    };
+
+    act(() => {
+      emitMockEvent('git-info-p-1', gitInfo);
+    });
+
+    expect(await screen.findAllByText('feature-x')).toHaveLength(2);
   });
 });

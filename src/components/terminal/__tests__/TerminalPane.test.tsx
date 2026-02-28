@@ -20,6 +20,8 @@ describe('TerminalPane', () => {
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
+    mockInvoke('scrollback_load', () => null);
+    mockInvoke('scrollback_save', () => undefined);
   });
 
   it('renders terminal container with data-testid', () => {

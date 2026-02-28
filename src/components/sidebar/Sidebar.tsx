@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import type { WorkspaceInfo } from '../../lib/workspace-types';
+import type { WorkspaceInfo, LayoutNode } from '../../lib/workspace-types';
+import { WorkspaceMetadata } from './WorkspaceMetadata';
 
 export interface SidebarProps {
   workspaces: WorkspaceInfo[];
@@ -7,6 +8,17 @@ export interface SidebarProps {
   onWorkspaceSelect: (id: string) => void;
   onWorkspaceCreate: () => void;
   onWorkspaceClose: (id: string) => void;
+}
+
+function findFirstLeafPaneId(node: LayoutNode): string | null {
+  if (node.type === 'leaf') return node.paneId;
+  return findFirstLeafPaneId(node.children[0]);
+}
+
+function getWorkspacePaneId(ws: WorkspaceInfo): string | null {
+  const surface = ws.surfaces[ws.activeSurfaceIndex];
+  if (!surface) return null;
+  return findFirstLeafPaneId(surface.layout);
 }
 
 export function Sidebar({
@@ -48,31 +60,39 @@ export function Sidebar({
   return (
     <nav style={navStyle} onKeyDown={handleKeyDown}>
       <ul ref={listRef} role="list" style={listStyle}>
-        {workspaces.map((ws, index) => (
-          <li
-            key={ws.id}
-            data-active={ws.id === activeWorkspaceId ? 'true' : 'false'}
-            data-focused={index === focusedIndex ? 'true' : 'false'}
-            style={{
-              ...itemStyle,
-              ...(ws.id === activeWorkspaceId ? activeItemStyle : {}),
-            }}
-          >
-            <button
-              style={nameButtonStyle}
-              onClick={() => handleWorkspaceClick(ws.id, index)}
+        {workspaces.map((ws, index) => {
+          const paneId = getWorkspacePaneId(ws);
+          return (
+            <li
+              key={ws.id}
+              data-active={ws.id === activeWorkspaceId ? 'true' : 'false'}
+              data-focused={index === focusedIndex ? 'true' : 'false'}
+              style={{
+                ...itemStyle,
+                ...(ws.id === activeWorkspaceId ? activeItemStyle : {}),
+              }}
             >
-              {ws.name}
-            </button>
-            <button
-              aria-label={`Close ${ws.name}`}
-              style={closeButtonStyle}
-              onClick={() => onWorkspaceClose(ws.id)}
-            >
-              ×
-            </button>
-          </li>
-        ))}
+              <div style={itemContentStyle}>
+                <div style={itemHeaderStyle}>
+                  <button
+                    style={nameButtonStyle}
+                    onClick={() => handleWorkspaceClick(ws.id, index)}
+                  >
+                    {ws.name}
+                  </button>
+                  <button
+                    aria-label={`Close ${ws.name}`}
+                    style={closeButtonStyle}
+                    onClick={() => onWorkspaceClose(ws.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+                {paneId && <WorkspaceMetadata paneId={paneId} />}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       <button
         aria-label="New Workspace"
@@ -103,10 +123,18 @@ const listStyle: React.CSSProperties = {
 };
 
 const itemStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
   padding: '4px 8px',
   cursor: 'pointer',
+};
+
+const itemContentStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const itemHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
 };
 
 const activeItemStyle: React.CSSProperties = {

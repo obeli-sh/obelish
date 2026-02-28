@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { invoke, mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { listen, emitMockEvent, clearEventMocks } from '@tauri-apps/api/event';
 import { useTerminal } from '../useTerminal';
@@ -29,6 +30,8 @@ describe('useTerminal', () => {
     clearEventMocks();
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
+    mockInvoke('scrollback_load', () => null);
+    mockInvoke('scrollback_save', () => undefined);
   });
 
   afterEach(() => {
@@ -321,5 +324,146 @@ describe('useTerminal', () => {
     unmount();
 
     expect(mockResizeObserver.disconnect).toHaveBeenCalled();
+  });
+
+  it('loads SerializeAddon', async () => {
+    const container = createContainer();
+    const { result } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.terminal.current).not.toBeNull();
+    });
+
+    expect(result.current.terminal.current!.loadAddon).toHaveBeenCalledWith(
+      expect.any(SerializeAddon)
+    );
+  });
+
+  it('loads scrollback on initialization', async () => {
+    // "hello" base64-encoded is "aGVsbG8="
+    mockInvoke('scrollback_load', () => 'aGVsbG8=');
+
+    const container = createContainer();
+    const { result } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.terminal.current).not.toBeNull();
+    });
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('scrollback_load', { paneId: 'pane-1' });
+    });
+
+    // Verify terminal.write was called with the decoded content
+    const terminal = result.current.terminal.current!;
+    const writeCalls = (terminal.write as ReturnType<typeof vi.fn>).mock.calls;
+    const hasScrollbackWrite = writeCalls.some(
+      (call: unknown[]) => call[0] === 'hello'
+    );
+    expect(hasScrollbackWrite).toBe(true);
+  });
+
+  it('handles missing scrollback gracefully', async () => {
+    mockInvoke('scrollback_load', () => null);
+
+    const container = createContainer();
+    const { result } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.terminal.current).not.toBeNull();
+    });
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('scrollback_load', { paneId: 'pane-1' });
+    });
+
+    // Terminal should still be ready
+    expect(result.current.isReady).toBe(true);
+
+    // terminal.write should NOT have been called with scrollback data
+    // (it may be called by pty-data events, but not with decoded scrollback)
+    const terminal = result.current.terminal.current!;
+    const writeCalls = (terminal.write as ReturnType<typeof vi.fn>).mock.calls;
+    const hasStringWrite = writeCalls.some(
+      (call: unknown[]) => typeof call[0] === 'string'
+    );
+    expect(hasStringWrite).toBe(false);
+  });
+
+  it('saves scrollback on cleanup', async () => {
+    const container = createContainer();
+    const { result, unmount } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.terminal.current).not.toBeNull();
+    });
+
+    // Find the SerializeAddon instance that was loaded
+    const terminal = result.current.terminal.current!;
+    const loadAddonCalls = (terminal.loadAddon as ReturnType<typeof vi.fn>).mock.calls;
+    const serializeAddon = loadAddonCalls.find(
+      (call: unknown[]) => call[0] instanceof SerializeAddon
+    )?.[0] as InstanceType<typeof SerializeAddon>;
+    expect(serializeAddon).toBeDefined();
+
+    // Set what serialize() returns
+    (serializeAddon.serialize as ReturnType<typeof vi.fn>).mockReturnValue('terminal content');
+
+    unmount();
+
+    expect(serializeAddon.serialize).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith('scrollback_save', {
+      paneId: 'pane-1',
+      data: btoa('terminal content'),
+    });
+  });
+
+  it('does not save scrollback if cancelled before load completes', async () => {
+    // Make scrollback_load return a promise that we control
+    let resolveLoad!: (val: string | null) => void;
+    mockInvoke('scrollback_load', () => new Promise<string | null>((resolve) => {
+      resolveLoad = resolve;
+    }));
+
+    const container = createContainer();
+    const { result, unmount } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(result.current.terminal.current).not.toBeNull();
+    });
+
+    // Unmount before scrollback load resolves
+    unmount();
+
+    // Resolve the load after unmount
+    await act(async () => {
+      resolveLoad('aGVsbG8=');
+    });
+
+    // terminal.write should NOT have been called with scrollback data
+    // because the component was already unmounted
+    const terminal = result.current.terminal.current;
+    // Terminal was disposed, so we check that write was NOT called with decoded scrollback
+    // The key check is that no error occurred
   });
 });

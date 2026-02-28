@@ -1,7 +1,9 @@
 pub mod commands;
 pub mod error;
+pub mod metadata;
 pub mod persistence;
 pub mod pty;
+pub mod scrollback;
 pub mod workspace;
 
 use std::sync::Arc;
@@ -25,7 +27,11 @@ pub fn run() {
                 FsPersistence::new(&app_data_dir).expect("failed to create persistence backend"),
             );
             let session_manager = SessionManager::new(backend);
-            let app_state = AppState::new(session_manager);
+            let scrollback_storage = scrollback::ScrollbackStorage::new(
+                app_data_dir.join("scrollback"),
+            )
+            .expect("failed to create scrollback storage");
+            let app_state = AppState::new(session_manager, scrollback_storage);
             app.manage(app_state);
 
             // Start autosave timer (30s interval)
@@ -66,6 +72,8 @@ pub fn run() {
             commands::pane_close,
             commands::session_save,
             commands::session_restore,
+            commands::scrollback_save,
+            commands::scrollback_load,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -3,8 +3,10 @@ use crate::persistence::session::SessionManager;
 use crate::pty::emitter::TauriEventEmitter;
 use crate::pty::types::{PtyConfig, PtySpawnResult};
 use crate::pty::PtyManager;
+use crate::scrollback::ScrollbackStorage;
 use crate::workspace::WorkspaceState;
-use obelisk_protocol::{SplitDirection, WorkspaceInfo};
+use base64::Engine as _;
+use obelisk_protocol::{LayoutNode, SplitDirection, WorkspaceInfo};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter, State};
@@ -13,14 +15,16 @@ pub struct AppState {
     pub pty_manager: PtyManager,
     pub workspace_state: Arc<RwLock<WorkspaceState>>,
     pub session_manager: SessionManager,
+    pub scrollback_storage: ScrollbackStorage,
 }
 
 impl AppState {
-    pub fn new(session_manager: SessionManager) -> Self {
+    pub fn new(session_manager: SessionManager, scrollback_storage: ScrollbackStorage) -> Self {
         Self {
             pty_manager: PtyManager::new(Arc::new(crate::pty::backend::RealPtyBackend::new())),
             workspace_state: Arc::new(RwLock::new(WorkspaceState::new())),
             session_manager,
+            scrollback_storage,
         }
     }
 }
@@ -130,6 +134,23 @@ pub fn workspace_close(
     app: AppHandle,
     workspace_id: String,
 ) -> Result<(), BackendError> {
+    // Collect pane IDs before closing for scrollback cleanup
+    let pane_ids = {
+        let ws = state
+            .workspace_state
+            .read()
+            .expect("workspace state lock poisoned");
+        if let Some(workspace) = ws.get_workspace(&workspace_id) {
+            let mut ids = Vec::new();
+            for surface in &workspace.surfaces {
+                collect_layout_pane_ids(&surface.layout, &mut ids);
+            }
+            ids
+        } else {
+            Vec::new()
+        }
+    };
+
     let pty_ids = {
         let mut ws = state
             .workspace_state
@@ -140,6 +161,12 @@ pub fn workspace_close(
 
     for pty_id in pty_ids {
         let _ = state.pty_manager.kill(&pty_id);
+    }
+
+    for pane_id in &pane_ids {
+        if let Err(e) = state.scrollback_storage.delete(pane_id) {
+            tracing::warn!("Failed to delete scrollback for pane {pane_id}: {e}");
+        }
     }
 
     state.session_manager.mark_dirty();
@@ -222,6 +249,10 @@ pub fn pane_close(
     };
 
     let _ = state.pty_manager.kill(&result.pty_id);
+
+    if let Err(e) = state.scrollback_storage.delete(&pane_id) {
+        tracing::warn!("Failed to delete scrollback for pane {pane_id}: {e}");
+    }
 
     state.session_manager.mark_dirty();
 
@@ -333,6 +364,46 @@ pub fn session_restore(
     }
 
     Ok(workspaces)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn scrollback_save(
+    state: State<'_, AppState>,
+    pane_id: String,
+    data: String,
+) -> Result<(), BackendError> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| {
+            crate::error::PersistenceError::Corrupted {
+                reason: format!("invalid base64: {e}"),
+            }
+        })?;
+    state.scrollback_storage.save(&pane_id, &bytes)?;
+    Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn scrollback_load(
+    state: State<'_, AppState>,
+    pane_id: String,
+) -> Result<Option<String>, BackendError> {
+    match state.scrollback_storage.load(&pane_id)? {
+        Some(bytes) => Ok(Some(base64::engine::general_purpose::STANDARD.encode(&bytes))),
+        None => Ok(None),
+    }
+}
+
+fn collect_layout_pane_ids(layout: &LayoutNode, ids: &mut Vec<String>) {
+    match layout {
+        LayoutNode::Leaf { pane_id, .. } => ids.push(pane_id.clone()),
+        LayoutNode::Split { children, .. } => {
+            collect_layout_pane_ids(&children[0], ids);
+            collect_layout_pane_ids(&children[1], ids);
+        }
+    }
 }
 
 fn create_default_workspace(

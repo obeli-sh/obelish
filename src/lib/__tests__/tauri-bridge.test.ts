@@ -193,4 +193,46 @@ describe('tauriBridge', () => {
       await expect(tauriBridge.session.restore()).rejects.toThrow('restore failed');
     });
   });
+
+  describe('scrollback.save', () => {
+    it('calls invoke with scrollback_save, paneId and data', async () => {
+      mockInvoke('scrollback_save', () => undefined);
+
+      await tauriBridge.scrollback.save('pane-1', 'base64data');
+
+      expect(invoke).toHaveBeenCalledWith('scrollback_save', { paneId: 'pane-1', data: 'base64data' });
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('scrollback_save', () => Promise.reject(new Error('save failed')));
+
+      await expect(tauriBridge.scrollback.save('pane-1', 'data')).rejects.toThrow('save failed');
+    });
+  });
+
+  describe('scrollback.load', () => {
+    it('calls invoke with scrollback_load and returns data', async () => {
+      mockInvoke('scrollback_load', () => 'base64data');
+
+      const result = await tauriBridge.scrollback.load('pane-1');
+
+      expect(invoke).toHaveBeenCalledWith('scrollback_load', { paneId: 'pane-1' });
+      expect(result).toBe('base64data');
+    });
+
+    it('returns null when no scrollback exists', async () => {
+      mockInvoke('scrollback_load', () => null);
+
+      const result = await tauriBridge.scrollback.load('pane-1');
+
+      expect(invoke).toHaveBeenCalledWith('scrollback_load', { paneId: 'pane-1' });
+      expect(result).toBeNull();
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('scrollback_load', () => Promise.reject(new Error('load failed')));
+
+      await expect(tauriBridge.scrollback.load('pane-1')).rejects.toThrow('load failed');
+    });
+  });
 });

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { listen } from '@tauri-apps/api/event';
 import { tauriBridge } from '../../lib/tauri-bridge';
 
-export function useTerminal(_paneId: string, ptyId: string) {
+export function useTerminal(paneId: string, ptyId: string) {
   const terminalRef = useRef<Terminal | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -32,6 +33,9 @@ export function useTerminal(_paneId: string, ptyId: string) {
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
+    const serializeAddon = new SerializeAddon();
+    terminal.loadAddon(serializeAddon);
+
     try {
       const webglAddon = new WebglAddon();
       terminal.loadAddon(webglAddon);
@@ -44,6 +48,14 @@ export function useTerminal(_paneId: string, ptyId: string) {
 
     let cancelled = false;
     let unlisten: (() => void) | null = null;
+
+    const loadScrollback = async () => {
+      const data = await tauriBridge.scrollback.load(paneId);
+      if (cancelled || !data) return;
+      terminal.write(atob(data));
+    };
+    loadScrollback();
+
     const setupListener = async () => {
       unlisten = await listen<{ data: string }>(`pty-data-${ptyId}`, (event) => {
         const bytes = atob(event.payload.data);
@@ -78,6 +90,10 @@ export function useTerminal(_paneId: string, ptyId: string) {
 
     return () => {
       cancelled = true;
+      const serialized = serializeAddon.serialize();
+      if (serialized) {
+        tauriBridge.scrollback.save(paneId, btoa(serialized));
+      }
       resizeObserver.disconnect();
       dataDisposable.dispose();
       resizeDisposable.dispose();
@@ -88,7 +104,7 @@ export function useTerminal(_paneId: string, ptyId: string) {
       terminalRef.current = null;
       setIsReady(false);
     };
-  }, [container, ptyId]);
+  }, [container, paneId, ptyId]);
 
   return { terminalRef: refCallback, isReady, terminal: terminalRef };
 }

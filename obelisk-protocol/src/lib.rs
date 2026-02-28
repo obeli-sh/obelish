@@ -66,3 +66,23 @@ pub enum PaneType {
     Terminal,
     Browser,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GitInfo {
+    pub branch: Option<String>,
+    pub is_dirty: bool,
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PortInfo {
+    pub port: u16,
+    pub protocol: String,
+    pub pid: Option<u32>,
+    pub process_name: Option<String>,
+}

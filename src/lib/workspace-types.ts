@@ -47,3 +47,17 @@ export interface WorkspaceChangedEvent {
   workspaceId: string;
   workspace: WorkspaceInfo;
 }
+
+export interface GitInfo {
+  branch: string | null;
+  isDirty: boolean;
+  ahead: number;
+  behind: number;
+}
+
+export interface PortInfo {
+  port: number;
+  protocol: string;
+  pid: number | null;
+  processName: string | null;
+}
