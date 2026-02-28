@@ -22,6 +22,14 @@ export default defineConfig({
         __dirname,
         "src/__mocks__/@xterm/xterm.ts",
       ),
+      "@xterm/addon-fit": path.resolve(
+        __dirname,
+        "src/__mocks__/@xterm/addon-fit.ts",
+      ),
+      "@xterm/addon-webgl": path.resolve(
+        __dirname,
+        "src/__mocks__/@xterm/addon-webgl.ts",
+      ),
     },
     coverage: {
       provider: "v8",
