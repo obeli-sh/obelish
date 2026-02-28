@@ -150,30 +150,47 @@ impl WorkspaceState {
     }
 
     pub fn close_pane(&mut self, pane_id: &str) -> Result<PaneCloseResult, WorkspaceError> {
-        let pane = self
-            .panes
-            .remove(pane_id)
-            .ok_or_else(|| WorkspaceError::PaneNotFound {
+        // Check pane exists before mutating
+        if !self.panes.contains_key(pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
                 id: pane_id.to_string(),
-            })?;
+            });
+        }
 
-        let pty_id = pane.pty_id.clone();
-
-        let workspace = self
+        // Find the workspace containing this pane
+        let ws_idx = self
             .workspaces
-            .iter_mut()
-            .find(|w| {
+            .iter()
+            .position(|w| {
                 w.surfaces
                     .iter()
                     .any(|s| layout_contains_pane(&s.layout, pane_id))
             })
-            .ok_or_else(|| {
-                // Put pane back since we couldn't find its workspace
-                self.panes.insert(pane_id.to_string(), pane);
-                WorkspaceError::PaneNotFound {
-                    id: pane_id.to_string(),
-                }
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
             })?;
+
+        // Pre-check: would closing this pane remove the last workspace?
+        let workspace = &self.workspaces[ws_idx];
+        let surface_idx = workspace
+            .surfaces
+            .iter()
+            .position(|s| layout_contains_pane(&s.layout, pane_id));
+        let would_remove_surface = surface_idx
+            .map(|i| remove_from_layout(&workspace.surfaces[i].layout, pane_id).is_none())
+            .unwrap_or(false);
+        let would_close_workspace =
+            would_remove_surface && workspace.surfaces.len() == 1;
+
+        if would_close_workspace && self.workspaces.len() <= 1 {
+            return Err(WorkspaceError::LastWorkspace);
+        }
+
+        // Safe to proceed with mutations
+        let pane = self.panes.remove(pane_id).unwrap();
+        let pty_id = pane.pty_id.clone();
+
+        let workspace = &mut self.workspaces[ws_idx];
 
         // Find which surface contains the pane and remove it from the layout
         let mut surface_to_remove = None;
@@ -184,7 +201,6 @@ impl WorkspaceState {
                         surface.layout = new_layout;
                     }
                     None => {
-                        // The pane was the only leaf in this surface
                         surface_to_remove = Some(i);
                     }
                 }
@@ -201,7 +217,6 @@ impl WorkspaceState {
             }
         }
 
-        // Check if workspace has no surfaces left
         let workspace_closed = workspace.surfaces.is_empty();
         let workspace_info = if workspace_closed {
             None
@@ -608,33 +623,39 @@ mod tests {
     }
 
     #[test]
-    fn close_last_pane_closes_surface() {
+    fn close_last_pane_in_only_workspace_returns_error() {
         let mut state = new_state();
-        let ws = state.create_workspace(
+        state.create_workspace(
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+        );
+
+        let err = state.close_pane("pane-1").unwrap_err();
+        assert!(matches!(err, WorkspaceError::LastWorkspace));
+        // Pane should still exist
+        assert!(state.get_pane("pane-1").is_some());
+    }
+
+    #[test]
+    fn close_last_pane_closes_workspace_when_others_exist() {
+        let mut state = new_state();
+        let ws1 = state.create_workspace(
+            "First".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+        );
+        state.create_workspace(
+            "Second".to_string(),
+            "pane-2".to_string(),
+            "pty-2".to_string(),
         );
 
         let result = state.close_pane("pane-1").unwrap();
         assert_eq!(result.pty_id, "pty-1");
         assert!(result.workspace_closed);
-        assert!(state.get_workspace(&ws.id).is_none());
-    }
-
-    #[test]
-    fn close_last_surface_closes_workspace() {
-        let mut state = new_state();
-        let ws = state.create_workspace(
-            "Test".to_string(),
-            "pane-1".to_string(),
-            "pty-1".to_string(),
-        );
-
-        let result = state.close_pane("pane-1").unwrap();
-        assert!(result.workspace_closed);
-        assert!(state.get_workspace(&ws.id).is_none());
-        assert_eq!(state.list_workspaces().len(), 0);
+        assert!(state.get_workspace(&ws1.id).is_none());
+        assert_eq!(state.list_workspaces().len(), 1);
     }
 
     #[test]
@@ -767,7 +788,7 @@ mod tests {
         };
         let json = serde_json::to_value(&layout).unwrap();
         assert_eq!(json["type"], "leaf");
-        assert_eq!(json["pane_id"], "pane-1");
+        assert_eq!(json["paneId"], "pane-1");
     }
 
     #[test]

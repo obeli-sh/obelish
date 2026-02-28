@@ -66,23 +66,29 @@ export function AppLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    let unlisten: (() => void) | null = null;
+    let unlistenChanged: (() => void) | null = null;
+    let unlistenRemoved: (() => void) | null = null;
 
     const setup = async () => {
-      unlisten = await listen<WorkspaceChangedEvent>('workspace-changed', (event) => {
+      unlistenChanged = await listen<WorkspaceChangedEvent>('workspace-changed', (event) => {
         if (cancelled) return;
         const { workspace } = event.payload;
         useWorkspaceStore.getState()._syncWorkspace(workspace);
       });
-      if (cancelled && unlisten) {
-        unlisten();
-      }
+      if (cancelled) { unlistenChanged?.(); return; }
+
+      unlistenRemoved = await listen<{ workspaceId: string }>('workspace-removed', (event) => {
+        if (cancelled) return;
+        useWorkspaceStore.getState()._removeWorkspace(event.payload.workspaceId);
+      });
+      if (cancelled) { unlistenRemoved?.(); }
     };
 
     setup();
     return () => {
       cancelled = true;
-      if (unlisten) unlisten();
+      unlistenChanged?.();
+      unlistenRemoved?.();
     };
   }, []);
 
@@ -91,14 +97,22 @@ export function AppLayout() {
   };
 
   const handleWorkspaceCreate = async () => {
-    const ws = await tauriBridge.workspace.create();
-    useWorkspaceStore.getState()._syncWorkspace(ws);
-    useWorkspaceStore.getState()._setActiveWorkspace(ws.id);
+    try {
+      const ws = await tauriBridge.workspace.create();
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+      useWorkspaceStore.getState()._setActiveWorkspace(ws.id);
+    } catch (err) {
+      console.error('Failed to create workspace:', err);
+    }
   };
 
   const handleWorkspaceClose = async (id: string) => {
-    await tauriBridge.workspace.close(id);
-    useWorkspaceStore.getState()._removeWorkspace(id);
+    try {
+      await tauriBridge.workspace.close(id);
+      useWorkspaceStore.getState()._removeWorkspace(id);
+    } catch (err) {
+      console.error('Failed to close workspace:', err);
+    }
   };
 
   const handleSurfaceSelect = (surfaceId: string) => {

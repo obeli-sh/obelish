@@ -86,7 +86,7 @@ pub fn pty_kill(state: State<'_, AppState>, pty_id: String) -> Result<(), Backen
 pub fn workspace_create(
     state: State<'_, AppState>,
     app: AppHandle,
-    name: String,
+    name: Option<String>,
     shell: Option<String>,
     cwd: Option<String>,
 ) -> Result<WorkspaceInfo, BackendError> {
@@ -102,10 +102,18 @@ pub fn workspace_create(
     let emitter = Arc::new(TauriEventEmitter::new(app.clone()));
     let pty_id = state.pty_manager.spawn(config, emitter)?;
 
-    let mut ws = state.workspace_state.write().unwrap();
-    let workspace = ws.create_workspace(name, pane_id, pty_id);
+    let ws_name = name.unwrap_or_else(|| {
+        let ws = state.workspace_state.read().expect("workspace state lock poisoned");
+        format!("Workspace {}", ws.list_workspaces().len() + 1)
+    });
 
-    let _ = app.emit("workspace-changed", &workspace);
+    let mut ws = state.workspace_state.write().expect("workspace state lock poisoned");
+    let workspace = ws.create_workspace(ws_name, pane_id, pty_id);
+
+    let _ = app.emit(
+        "workspace-changed",
+        serde_json::json!({ "workspaceId": workspace.id, "workspace": workspace }),
+    );
 
     Ok(workspace)
 }
@@ -118,7 +126,7 @@ pub fn workspace_close(
     workspace_id: String,
 ) -> Result<(), BackendError> {
     let pty_ids = {
-        let mut ws = state.workspace_state.write().unwrap();
+        let mut ws = state.workspace_state.write().expect("workspace state lock poisoned");
         ws.close_workspace(&workspace_id)?
     };
 
@@ -126,7 +134,10 @@ pub fn workspace_close(
         let _ = state.pty_manager.kill(&pty_id);
     }
 
-    let _ = app.emit("workspace-changed", &workspace_id);
+    let _ = app.emit(
+        "workspace-removed",
+        serde_json::json!({ "workspaceId": workspace_id }),
+    );
 
     Ok(())
 }
@@ -134,7 +145,7 @@ pub fn workspace_close(
 #[tauri::command]
 #[tracing::instrument(skip(state))]
 pub fn workspace_list(state: State<'_, AppState>) -> Result<Vec<WorkspaceInfo>, BackendError> {
-    let ws = state.workspace_state.read().unwrap();
+    let ws = state.workspace_state.read().expect("workspace state lock poisoned");
     Ok(ws.list_workspaces().to_vec())
 }
 
@@ -160,10 +171,19 @@ pub fn pane_split(
     let emitter = Arc::new(TauriEventEmitter::new(app.clone()));
     let new_pty_id = state.pty_manager.spawn(config, emitter)?;
 
-    let mut ws = state.workspace_state.write().unwrap();
-    let result = ws.split_pane(&pane_id, direction, new_pane_id, new_pty_id)?;
+    let mut ws = state.workspace_state.write().expect("workspace state lock poisoned");
+    let result = ws.split_pane(&pane_id, direction, new_pane_id, new_pty_id.clone());
 
-    let _ = app.emit("workspace-changed", &result.workspace);
+    if result.is_err() {
+        drop(ws);
+        let _ = state.pty_manager.kill(&new_pty_id);
+    }
+    let result = result?;
+
+    let _ = app.emit(
+        "workspace-changed",
+        serde_json::json!({ "workspaceId": result.workspace.id, "workspace": result.workspace }),
+    );
 
     Ok(result.workspace)
 }
@@ -176,13 +196,24 @@ pub fn pane_close(
     pane_id: String,
 ) -> Result<(), BackendError> {
     let result = {
-        let mut ws = state.workspace_state.write().unwrap();
+        let mut ws = state.workspace_state.write().expect("workspace state lock poisoned");
         ws.close_pane(&pane_id)?
     };
 
     let _ = state.pty_manager.kill(&result.pty_id);
 
-    let _ = app.emit("workspace-changed", &pane_id);
+    if let Some(workspace) = &result.workspace {
+        let _ = app.emit(
+            "workspace-changed",
+            serde_json::json!({ "workspaceId": workspace.id, "workspace": workspace }),
+        );
+    } else {
+        // Workspace was closed because last pane was removed
+        let _ = app.emit(
+            "workspace-removed",
+            serde_json::json!({ "workspaceId": "closed" }),
+        );
+    }
 
     Ok(())
 }

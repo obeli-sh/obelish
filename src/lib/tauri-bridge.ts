@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { WorkspaceInfo, PaneSplitResult, SplitDirection } from './workspace-types';
+import type { WorkspaceInfo, SplitDirection } from './workspace-types';
 
 export interface PtySpawnArgs {
   shell?: string;
@@ -27,7 +27,7 @@ export const tauriBridge = {
   },
   pane: {
     split: (paneId: string, direction: SplitDirection, shell?: string) =>
-      invoke<PaneSplitResult>('pane_split', { paneId, direction, shell }),
+      invoke<WorkspaceInfo>('pane_split', { paneId, direction, shell }),
     close: (paneId: string) => invoke<void>('pane_close', { paneId }),
   },
 } as const;

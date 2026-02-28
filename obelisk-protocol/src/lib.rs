@@ -27,7 +27,10 @@ pub struct SurfaceInfo {
 #[ts(export)]
 pub enum LayoutNode {
     #[serde(rename = "leaf")]
-    Leaf { pane_id: String },
+    Leaf {
+        #[serde(rename = "paneId")]
+        pane_id: String,
+    },
     #[serde(rename = "split")]
     Split {
         direction: SplitDirection,
