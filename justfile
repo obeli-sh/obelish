@@ -28,3 +28,26 @@ bench:
 # Build for production
 build:
     bun tauri build
+
+# Build release Tauri app
+release:
+    bun tauri build
+
+# Build release CLI binary
+release-cli:
+    cargo build --release -p obelisk-cli
+
+# Build both Tauri app and CLI
+release-all: release release-cli
+
+# Generate icons from source image
+icons source:
+    bun tauri icon {{source}}
+
+# Print binary and bundle sizes
+check-sizes:
+    @echo "=== CLI binary ==="
+    @ls -lh target/release/obelisk 2>/dev/null || echo "CLI not built yet (run: just release-cli)"
+    @echo ""
+    @echo "=== Tauri bundles ==="
+    @find target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.msi" -o -name "*.exe" -o -name "*.app" \) -exec ls -lh {} \; 2>/dev/null || echo "Bundles not built yet (run: just release)"

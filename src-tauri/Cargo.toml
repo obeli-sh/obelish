@@ -27,6 +27,7 @@ zstd = "0.13"
 
 [dev-dependencies]
 mockall = "0.13"
+toml = "0.8"
 proptest = "1"
 tempfile = "3"
 test-log = { version = "0.2", features = ["trace"] }
