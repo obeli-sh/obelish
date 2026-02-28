@@ -6,24 +6,7 @@ import { clearEventMocks, emitMockEvent } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { WorkspaceInfo } from '../../lib/workspace-types';
-
-// Mock TerminalPane to avoid xterm.js complexity
-vi.mock('../terminal/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
-    <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
-  )),
-}));
-
-// Mock react-resizable-panels (vitest alias handles this via __mocks__)
-
-// Mock ResizeObserver
-vi.stubGlobal('ResizeObserver', vi.fn(() => ({
-  observe: vi.fn(),
-  disconnect: vi.fn(),
-  unobserve: vi.fn(),
-})));
-
-// Import after mocks
+import * as TerminalPaneModule from '../terminal/TerminalPane';
 import { AppLayout } from '../AppLayout';
 
 function makeWorkspace(id: string, name: string, paneId = 'pane-1', ptyId = 'pty-1'): WorkspaceInfo {
@@ -51,15 +34,22 @@ function makeWorkspaceMultiSurface(id: string, name: string): WorkspaceInfo {
 
 describe('AppLayout', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     clearInvokeMocks();
     clearEventMocks();
+    // Mock TerminalPane to avoid xterm.js complexity
+    vi.spyOn(TerminalPaneModule, 'TerminalPane').mockImplementation(
+      ({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
+        <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
+      ),
+    );
     // Reset stores
     useWorkspaceStore.setState({ workspaces: {}, activeWorkspaceId: null });
     useUiStore.setState({ focusedPaneId: null, sidebarOpen: true, notificationPanelOpen: false });
     // Default mocks for commands that may be called
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
+    mockInvoke('scrollback_load', () => null);
   });
 
   it('shows loading state initially', () => {

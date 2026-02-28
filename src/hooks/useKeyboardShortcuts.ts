@@ -1,45 +1,53 @@
 import { useEffect, useRef } from 'react';
+import { useSettingsStore } from '../stores/settingsStore';
+import { getCommands } from '../lib/commands';
+import { isMac, type KeyBinding } from '../lib/keybinding-utils';
 
-export interface ShortcutDefinition {
-  key: string;
-  shift?: boolean;
-  action: () => void;
+const TERMINAL_PASSTHROUGH_KEYS = new Set(['c', 'd', 'z', 'l']);
+
+function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
+  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  if (binding.mod !== mod) return false;
+  if (binding.shift !== e.shiftKey) return false;
+  if (binding.alt !== e.altKey) return false;
+  return e.key.toLowerCase() === binding.key.toLowerCase();
 }
 
-const TERMINAL_SIGNAL_KEYS = new Set(['c', 'd', 'z']);
-
-function isMac(): boolean {
-  return navigator.platform.includes('Mac');
+function isTerminalPassthrough(e: KeyboardEvent): boolean {
+  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  return mod && !e.shiftKey && TERMINAL_PASSTHROUGH_KEYS.has(e.key.toLowerCase());
 }
 
-export function useKeyboardShortcuts(shortcuts: ShortcutDefinition[]): void {
-  const shortcutsRef = useRef(shortcuts);
-  shortcutsRef.current = shortcuts;
+export function useKeyboardShortcuts(): void {
+  const keybindingsRef = useRef(useSettingsStore.getState().keybindings);
+
+  useEffect(() => {
+    const unsubscribe = useSettingsStore.subscribe((state) => {
+      keybindingsRef.current = state.keybindings;
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = isMac() ? e.metaKey : e.ctrlKey;
       if (!mod) return;
 
-      for (const shortcut of shortcutsRef.current) {
-        // Skip terminal signals (Ctrl+C/D/Z without shift)
-        if (
-          TERMINAL_SIGNAL_KEYS.has(shortcut.key) &&
-          !shortcut.shift &&
-          e.key.toLowerCase() === shortcut.key
-        ) {
-          return;
-        }
+      if (isTerminalPassthrough(e)) return;
 
-        const shiftRequired = shortcut.shift ?? false;
-        if (
-          e.key.toLowerCase() === shortcut.key.toLowerCase() &&
-          e.shiftKey === shiftRequired
-        ) {
-          e.preventDefault();
-          e.stopPropagation();
-          shortcut.action();
-          return;
+      const bindings = keybindingsRef.current;
+      const allCommands = getCommands();
+
+      for (const [commandId, binding] of Object.entries(bindings)) {
+        if (matchesBinding(e, binding)) {
+          const command = allCommands.find((c) => c.id === commandId);
+          if (command) {
+            e.preventDefault();
+            e.stopPropagation();
+            command.execute();
+            return;
+          }
         }
       }
     };

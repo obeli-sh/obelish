@@ -8,9 +8,13 @@ interface UiStoreState {
   focusedPaneId: string | null;
   sidebarOpen: boolean;
   notificationPanelOpen: boolean;
+  commandPaletteOpen: boolean;
+  settingsOpen: boolean;
   setFocusedPane: (id: string | null) => void;
   toggleSidebar: () => void;
   toggleNotificationPanel: () => void;
+  toggleCommandPalette: () => void;
+  toggleSettings: () => void;
   focusAdjacentPane: (direction: Direction) => void;
 }
 
@@ -91,6 +95,8 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   focusedPaneId: null,
   sidebarOpen: true,
   notificationPanelOpen: false,
+  commandPaletteOpen: false,
+  settingsOpen: false,
 
   setFocusedPane: (id) => {
     set({ focusedPaneId: id });
@@ -102,6 +108,14 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   toggleNotificationPanel: () => {
     set((state) => ({ notificationPanelOpen: !state.notificationPanelOpen }));
+  },
+
+  toggleCommandPalette: () => {
+    set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen }));
+  },
+
+  toggleSettings: () => {
+    set((state) => ({ settingsOpen: !state.settingsOpen }));
   },
 
   focusAdjacentPane: (direction) => {

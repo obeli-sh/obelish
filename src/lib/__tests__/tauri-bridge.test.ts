@@ -324,4 +324,60 @@ describe('tauriBridge', () => {
       await expect(tauriBridge.notification.clear()).rejects.toThrow('clear failed');
     });
   });
+
+  describe('settings.get', () => {
+    it('calls invoke with settings_get and returns settings', async () => {
+      const mockSettings = {
+        theme: 'dark',
+        terminalFontFamily: 'monospace',
+        terminalFontSize: 14,
+        scrollbackLines: 5000,
+        keybindings: {},
+      };
+      mockInvoke('settings_get', () => mockSettings);
+
+      const result = await tauriBridge.settings.get();
+
+      expect(invoke).toHaveBeenCalledWith('settings_get');
+      expect(result).toEqual(mockSettings);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('settings_get', () => Promise.reject(new Error('get failed')));
+
+      await expect(tauriBridge.settings.get()).rejects.toThrow('get failed');
+    });
+  });
+
+  describe('settings.update', () => {
+    it('calls invoke with settings_update and partial settings', async () => {
+      mockInvoke('settings_update', () => undefined);
+
+      await tauriBridge.settings.update({ theme: 'light' });
+
+      expect(invoke).toHaveBeenCalledWith('settings_update', { settings: { theme: 'light' } });
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('settings_update', () => Promise.reject(new Error('update failed')));
+
+      await expect(tauriBridge.settings.update({ theme: 'dark' })).rejects.toThrow('update failed');
+    });
+  });
+
+  describe('settings.reset', () => {
+    it('calls invoke with settings_reset', async () => {
+      mockInvoke('settings_reset', () => undefined);
+
+      await tauriBridge.settings.reset();
+
+      expect(invoke).toHaveBeenCalledWith('settings_reset');
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('settings_reset', () => Promise.reject(new Error('reset failed')));
+
+      await expect(tauriBridge.settings.reset()).rejects.toThrow('reset failed');
+    });
+  });
 });

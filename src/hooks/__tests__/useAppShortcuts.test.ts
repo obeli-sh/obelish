@@ -2,50 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useUiStore } from '../../stores/uiStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { invoke, mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import type { WorkspaceInfo } from '../../lib/workspace-types';
 
-vi.mock('../../lib/tauri-bridge', () => ({
-  tauriBridge: {
-    workspace: {
-      create: vi.fn(() =>
-        Promise.resolve({
-          id: 'ws-1',
-          name: 'Workspace 1',
-          surfaces: [],
-          activeSurfaceIndex: 0,
-          createdAt: 0,
-        }),
-      ),
-      close: vi.fn(() => Promise.resolve()),
-      list: vi.fn(() => Promise.resolve([])),
-    },
-    pane: {
-      split: vi.fn(() =>
-        Promise.resolve({ paneId: 'new-pane', ptyId: 'new-pty' }),
-      ),
-      close: vi.fn(() => Promise.resolve()),
-      openBrowser: vi.fn(() =>
-        Promise.resolve({
-          id: 'ws-1',
-          name: 'Workspace 1',
-          surfaces: [],
-          activeSurfaceIndex: 0,
-          createdAt: 0,
-        }),
-      ),
-    },
-    pty: {
-      spawn: vi.fn(() => Promise.resolve({ ptyId: 'pty-1' })),
-      write: vi.fn(() => Promise.resolve()),
-      resize: vi.fn(() => Promise.resolve()),
-      kill: vi.fn(() => Promise.resolve()),
-    },
-  },
-}));
-
-// Import after mock so the mock is in place
 import { useAppShortcuts } from '../useAppShortcuts';
-import { tauriBridge } from '../../lib/tauri-bridge';
 
 function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
   const event = new KeyboardEvent('keydown', {
@@ -67,16 +28,46 @@ describe('useAppShortcuts', () => {
       configurable: true,
     });
 
-    useUiStore.setState({ focusedPaneId: 'pane-1', sidebarOpen: true });
+    clearInvokeMocks();
+
+    useUiStore.setState({
+      focusedPaneId: 'pane-1',
+      sidebarOpen: true,
+      commandPaletteOpen: false,
+      settingsOpen: false,
+      notificationPanelOpen: false,
+    });
     useWorkspaceStore.setState({
       workspaces: {},
       activeWorkspaceId: null,
     });
 
-    vi.mocked(tauriBridge.pane.split).mockClear();
-    vi.mocked(tauriBridge.pane.close).mockClear();
-    vi.mocked(tauriBridge.pane.openBrowser).mockClear();
-    vi.mocked(tauriBridge.workspace.create).mockClear();
+    // Reset settings store to defaults so keybindings match real commands
+    useSettingsStore.getState().resetAllKeybindings();
+
+    // Set up invoke handlers for commands that will be triggered
+    mockInvoke('pane_split', () => ({
+      id: 'ws-1',
+      name: 'Workspace 1',
+      surfaces: [],
+      activeSurfaceIndex: 0,
+      createdAt: 0,
+    }));
+    mockInvoke('pane_close', () => undefined);
+    mockInvoke('pane_open_browser', () => ({
+      id: 'ws-1',
+      name: 'Workspace 1',
+      surfaces: [],
+      activeSurfaceIndex: 0,
+      createdAt: 0,
+    }));
+    mockInvoke('workspace_create', () => ({
+      id: 'ws-new',
+      name: 'New Workspace',
+      surfaces: [],
+      activeSurfaceIndex: 0,
+      createdAt: 0,
+    }));
   });
 
   afterEach(() => {
@@ -91,7 +82,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('h', { ctrlKey: true, shiftKey: true });
 
-    expect(tauriBridge.pane.split).toHaveBeenCalledWith('pane-1', 'horizontal');
+    expect(invoke).toHaveBeenCalledWith('pane_split', { paneId: 'pane-1', direction: 'horizontal' });
     unmount();
   });
 
@@ -100,7 +91,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('v', { ctrlKey: true, shiftKey: true });
 
-    expect(tauriBridge.pane.split).toHaveBeenCalledWith('pane-1', 'vertical');
+    expect(invoke).toHaveBeenCalledWith('pane_split', { paneId: 'pane-1', direction: 'vertical' });
     unmount();
   });
 
@@ -109,7 +100,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('w', { ctrlKey: true });
 
-    expect(tauriBridge.pane.close).toHaveBeenCalledWith('pane-1');
+    expect(invoke).toHaveBeenCalledWith('pane_close', { paneId: 'pane-1' });
     unmount();
   });
 
@@ -118,7 +109,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('n', { ctrlKey: true });
 
-    expect(tauriBridge.workspace.create).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith('workspace_create', {});
     unmount();
   });
 
@@ -179,7 +170,11 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('b', { ctrlKey: true, shiftKey: true });
 
-    expect(tauriBridge.pane.openBrowser).toHaveBeenCalledWith('pane-1', 'about:blank', 'horizontal');
+    expect(invoke).toHaveBeenCalledWith('pane_open_browser', {
+      paneId: 'pane-1',
+      url: 'about:blank',
+      direction: 'horizontal',
+    });
     unmount();
   });
 
@@ -190,7 +185,10 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('b', { ctrlKey: true, shiftKey: true });
 
-    expect(tauriBridge.pane.openBrowser).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith(
+      'pane_open_browser',
+      expect.anything(),
+    );
     unmount();
   });
 
@@ -201,7 +199,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('h', { ctrlKey: true, shiftKey: true });
 
-    expect(tauriBridge.pane.split).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith('pane_split', expect.anything());
     unmount();
   });
 
@@ -212,7 +210,7 @@ describe('useAppShortcuts', () => {
 
     fireKeydown('w', { ctrlKey: true });
 
-    expect(tauriBridge.pane.close).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith('pane_close', expect.anything());
     unmount();
   });
 

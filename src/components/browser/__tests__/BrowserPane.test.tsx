@@ -1,32 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import * as useBrowserModule from '../../../hooks/useBrowser';
 import { BrowserPane } from '../BrowserPane';
 
-vi.mock('../../../hooks/useBrowser', () => ({
-  useBrowser: vi.fn(),
-}));
-
-vi.mock('../BrowserToolbar', () => ({
-  BrowserToolbar: vi.fn(({ url, onNavigate, canGoBack, canGoForward, isLoading, onBack, onForward, onRefresh }) => (
-    <div data-testid="browser-toolbar">
-      <input aria-label="URL" value={url} onChange={() => {}} onKeyDown={(e) => {
-        if (e.key === 'Enter') onNavigate(url);
-      }} />
-      <button aria-label="Go back" onClick={onBack} disabled={!canGoBack}>Back</button>
-      <button aria-label="Go forward" onClick={onForward} disabled={!canGoForward}>Forward</button>
-      <button aria-label="Refresh page" onClick={onRefresh}>Refresh</button>
-      {isLoading && <div role="progressbar" />}
-    </div>
-  )),
-}));
-
-import { useBrowser } from '../../../hooks/useBrowser';
-
-const mockUseBrowser = vi.mocked(useBrowser);
-
-function setupMock(overrides: Partial<ReturnType<typeof useBrowser>> = {}) {
-  const defaults: ReturnType<typeof useBrowser> = {
+function setupMock(overrides: Partial<ReturnType<typeof useBrowserModule.useBrowser>> = {}) {
+  const defaults: ReturnType<typeof useBrowserModule.useBrowser> = {
     iframeRef: vi.fn(),
     currentUrl: 'https://example.com',
     canGoBack: false,
@@ -38,13 +16,13 @@ function setupMock(overrides: Partial<ReturnType<typeof useBrowser>> = {}) {
     refresh: vi.fn(),
     ...overrides,
   };
-  mockUseBrowser.mockReturnValue(defaults);
+  vi.spyOn(useBrowserModule, 'useBrowser').mockReturnValue(defaults);
   return defaults;
 }
 
 describe('BrowserPane', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('renders_iframe_with_correct_src', () => {
@@ -57,11 +35,12 @@ describe('BrowserPane', () => {
   it('renders_BrowserToolbar_above_iframe', () => {
     setupMock();
     render(<BrowserPane paneId="pane-1" url="https://example.com" isActive={true} />);
-    const toolbar = screen.getByTestId('browser-toolbar');
+    // Find toolbar via the URL input and iframe
+    const urlInput = screen.getByLabelText('URL');
     const iframe = screen.getByTitle('Browser panel');
 
-    // Toolbar should appear before iframe in DOM
-    expect(toolbar.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Toolbar (containing URL input) should appear before iframe in DOM
+    expect(urlInput.compareDocumentPosition(iframe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('updates_iframe_src_when_navigating_via_toolbar', () => {
@@ -71,7 +50,7 @@ describe('BrowserPane', () => {
     render(<BrowserPane paneId="pane-1" url="https://example.com" isActive={true} />);
 
     // Verify useBrowser was called with correct args
-    expect(mockUseBrowser).toHaveBeenCalledWith('pane-1', 'https://example.com');
+    expect(useBrowserModule.useBrowser).toHaveBeenCalledWith('pane-1', 'https://example.com');
   });
 
   it('applies_sandbox_attribute_to_iframe', () => {

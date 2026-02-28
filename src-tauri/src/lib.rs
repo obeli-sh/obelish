@@ -5,6 +5,7 @@ pub mod notifications;
 pub mod persistence;
 pub mod pty;
 pub mod scrollback;
+pub mod settings;
 pub mod workspace;
 
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use std::time::Duration;
 use commands::AppState;
 use persistence::fs::FsPersistence;
 use persistence::session::SessionManager;
+use settings::manager::SettingsManager;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,12 +29,17 @@ pub fn run() {
             let backend = Arc::new(
                 FsPersistence::new(&app_data_dir).expect("failed to create persistence backend"),
             );
-            let session_manager = SessionManager::new(backend);
+            let session_manager = SessionManager::new(backend.clone());
             let scrollback_storage = scrollback::ScrollbackStorage::new(
                 app_data_dir.join("scrollback"),
             )
             .expect("failed to create scrollback storage");
-            let app_state = AppState::new(session_manager, scrollback_storage);
+            let settings_backend = Arc::new(
+                FsPersistence::new(app_data_dir.join("settings"))
+                    .expect("failed to create settings persistence backend"),
+            );
+            let settings_manager = SettingsManager::new(settings_backend);
+            let app_state = AppState::new(session_manager, scrollback_storage, settings_manager);
             app.manage(app_state);
 
             // Start autosave timer (30s interval)
@@ -79,6 +86,9 @@ pub fn run() {
             commands::notification_list,
             commands::notification_mark_read,
             commands::notification_clear,
+            commands::settings_get,
+            commands::settings_update,
+            commands::settings_reset,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

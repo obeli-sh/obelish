@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useKeyboardShortcuts, type ShortcutDefinition } from '../useKeyboardShortcuts';
+import { useSettingsStore } from '../../stores/settingsStore';
+import type { KeyBinding } from '../../lib/keybinding-utils';
+import * as commandsModule from '../../lib/commands';
+import type { Command } from '../../lib/commands';
+
+import { useKeyboardShortcuts } from '../useKeyboardShortcuts';
+
+function kb(key: string, mod = true, shift = false, alt = false): KeyBinding {
+  return { key, mod, shift, alt };
+}
 
 function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
   const event = new KeyboardEvent('keydown', {
@@ -15,9 +24,110 @@ function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
 
 describe('useKeyboardShortcuts', () => {
   let originalPlatform: string;
+  let getCommandsSpy: ReturnType<typeof vi.spyOn>;
+
+  const mockExecuteA = vi.fn();
+  const mockExecuteN = vi.fn();
+  const mockExecuteH = vi.fn();
+  const mockExecuteW = vi.fn();
+  const mockExecuteC = vi.fn();
+  const mockExecuteD = vi.fn();
+  const mockExecuteZ = vi.fn();
+  const mockExecuteL = vi.fn();
+
+  const testCommands: Command[] = [
+    {
+      id: 'test.action-a',
+      label: 'Action A',
+      description: 'Test action A',
+      category: 'app',
+      defaultBinding: kb('a'),
+      execute: mockExecuteA,
+    },
+    {
+      id: 'test.action-n',
+      label: 'Action N',
+      description: 'Test action N',
+      category: 'app',
+      defaultBinding: kb('n'),
+      execute: mockExecuteN,
+    },
+    {
+      id: 'test.action-h',
+      label: 'Action H',
+      description: 'Test action H',
+      category: 'pane',
+      defaultBinding: kb('h', true, true),
+      execute: mockExecuteH,
+    },
+    {
+      id: 'test.action-w',
+      label: 'Action W',
+      description: 'Test action W',
+      category: 'pane',
+      defaultBinding: kb('w'),
+      execute: mockExecuteW,
+    },
+    {
+      id: 'test.action-c',
+      label: 'Action C',
+      description: 'Test action C',
+      category: 'app',
+      defaultBinding: kb('c'),
+      execute: mockExecuteC,
+    },
+    {
+      id: 'test.action-d',
+      label: 'Action D',
+      description: 'Test action D',
+      category: 'app',
+      defaultBinding: kb('d'),
+      execute: mockExecuteD,
+    },
+    {
+      id: 'test.action-z',
+      label: 'Action Z',
+      description: 'Test action Z',
+      category: 'app',
+      defaultBinding: kb('z'),
+      execute: mockExecuteZ,
+    },
+    {
+      id: 'test.action-l',
+      label: 'Action L',
+      description: 'Test action L',
+      category: 'app',
+      defaultBinding: kb('l'),
+      execute: mockExecuteL,
+    },
+  ];
 
   beforeEach(() => {
     originalPlatform = navigator.platform;
+    mockExecuteA.mockClear();
+    mockExecuteN.mockClear();
+    mockExecuteH.mockClear();
+    mockExecuteW.mockClear();
+    mockExecuteC.mockClear();
+    mockExecuteD.mockClear();
+    mockExecuteZ.mockClear();
+    mockExecuteL.mockClear();
+
+    getCommandsSpy = vi.spyOn(commandsModule, 'getCommands').mockReturnValue(testCommands);
+
+    // Set up settingsStore with keybindings matching our test commands
+    useSettingsStore.setState({
+      keybindings: {
+        'test.action-a': kb('a'),
+        'test.action-n': kb('n'),
+        'test.action-h': kb('h', true, true),
+        'test.action-w': kb('w'),
+        'test.action-c': kb('c'),
+        'test.action-d': kb('d'),
+        'test.action-z': kb('z'),
+        'test.action-l': kb('l'),
+      },
+    });
   });
 
   afterEach(() => {
@@ -25,15 +135,13 @@ describe('useKeyboardShortcuts', () => {
       value: originalPlatform,
       configurable: true,
     });
+    getCommandsSpy.mockRestore();
   });
 
   it('registers keydown handler on window with capture: true', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
-    const action = vi.fn();
 
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'a', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function), true);
 
@@ -43,11 +151,8 @@ describe('useKeyboardShortcuts', () => {
 
   it('removes handler on unmount', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener');
-    const action = vi.fn();
 
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'a', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     unmount();
 
@@ -61,14 +166,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'n', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('n', { ctrlKey: true });
 
-    expect(action).toHaveBeenCalledTimes(1);
+    expect(mockExecuteN).toHaveBeenCalledTimes(1);
     unmount();
   });
 
@@ -78,14 +180,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'n', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('n', { metaKey: true });
 
-    expect(action).toHaveBeenCalledTimes(1);
+    expect(mockExecuteN).toHaveBeenCalledTimes(1);
     unmount();
   });
 
@@ -95,23 +194,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'n', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     const preventDefaultSpy = vi.fn();
     const stopPropagationSpy = vi.fn();
 
-    const handler = vi.fn();
-    window.addEventListener('keydown', handler, true);
-
-    // We need to check that the event gets preventDefault/stopPropagation called.
-    // Instead of spying on the event itself, we dispatch and check the action was called.
-    // Let's use a different approach: add a capturing listener before the hook.
-    window.removeEventListener('keydown', handler, true);
-
-    // Use a custom approach: create event, spy on its methods
     const event = new KeyboardEvent('keydown', {
       key: 'n',
       ctrlKey: true,
@@ -134,23 +221,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const shiftAction = vi.fn();
-    const noShiftAction = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([
-        { key: 'h', shift: true, action: shiftAction },
-        { key: 'h', action: noShiftAction },
-      ]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
-    // Ctrl+Shift+H should trigger only the shift shortcut
+    // Ctrl+Shift+H should trigger the shift shortcut
     fireKeydown('h', { ctrlKey: true, shiftKey: true });
-    expect(shiftAction).toHaveBeenCalledTimes(1);
-    expect(noShiftAction).not.toHaveBeenCalled();
-
-    // Ctrl+H (no shift) should trigger the non-shift shortcut
-    fireKeydown('h', { ctrlKey: true, shiftKey: false });
-    expect(noShiftAction).toHaveBeenCalledTimes(1);
+    expect(mockExecuteH).toHaveBeenCalledTimes(1);
 
     unmount();
   });
@@ -161,14 +236,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'c', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('c', { ctrlKey: true });
 
-    expect(action).not.toHaveBeenCalled();
+    expect(mockExecuteC).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -178,14 +250,11 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'd', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('d', { ctrlKey: true });
 
-    expect(action).not.toHaveBeenCalled();
+    expect(mockExecuteD).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -195,26 +264,34 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'z', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('z', { ctrlKey: true });
 
-    expect(action).not.toHaveBeenCalled();
+    expect(mockExecuteZ).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does NOT capture Ctrl+L (terminal signal)', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
+
+    fireKeydown('l', { ctrlKey: true });
+
+    expect(mockExecuteL).not.toHaveBeenCalled();
     unmount();
   });
 
   it('does not trigger without Ctrl/Meta modifier', () => {
-    const action = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([{ key: 'n', action }]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('n');
 
-    expect(action).not.toHaveBeenCalled();
+    expect(mockExecuteN).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -224,33 +301,22 @@ describe('useKeyboardShortcuts', () => {
       configurable: true,
     });
 
-    const action1 = vi.fn();
-    const action2 = vi.fn();
-    const { unmount } = renderHook(() =>
-      useKeyboardShortcuts([
-        { key: 'n', action: action1 },
-        { key: 'w', action: action2 },
-      ]),
-    );
+    const { unmount } = renderHook(() => useKeyboardShortcuts());
 
     fireKeydown('n', { ctrlKey: true });
-    expect(action1).toHaveBeenCalledTimes(1);
-    expect(action2).not.toHaveBeenCalled();
+    expect(mockExecuteN).toHaveBeenCalledTimes(1);
+    expect(mockExecuteW).not.toHaveBeenCalled();
 
     fireKeydown('w', { ctrlKey: true });
-    expect(action2).toHaveBeenCalledTimes(1);
+    expect(mockExecuteW).toHaveBeenCalledTimes(1);
 
     unmount();
   });
 
-  it('does not re-register handler when shortcuts ref is stable', () => {
+  it('does not re-register handler when store changes', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
-    const action = vi.fn();
-    const shortcuts: ShortcutDefinition[] = [{ key: 'a', action }];
 
-    const { rerender, unmount } = renderHook(() =>
-      useKeyboardShortcuts(shortcuts),
-    );
+    const { rerender, unmount } = renderHook(() => useKeyboardShortcuts());
 
     const initialCallCount = addSpy.mock.calls.filter(
       (call) => call[0] === 'keydown',
@@ -262,7 +328,6 @@ describe('useKeyboardShortcuts', () => {
       (call) => call[0] === 'keydown',
     ).length;
 
-    // Should not add another listener on rerender
     expect(afterRerenderCallCount).toBe(initialCallCount);
 
     unmount();

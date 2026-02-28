@@ -1,14 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
-
-vi.mock('../../terminal/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
-    <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
-  )),
-}));
-
+import * as TerminalPaneModule from '../../terminal/TerminalPane';
 import { PaneWrapper } from '../PaneWrapper';
 
 describe('PaneWrapper', () => {
@@ -18,6 +12,15 @@ describe('PaneWrapper', () => {
     isActive: false,
     onClick: vi.fn(),
   };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(TerminalPaneModule, 'TerminalPane').mockImplementation(
+      ({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
+        <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
+      ),
+    );
+  });
 
   it('renders TerminalPane with correct props', () => {
     render(<PaneWrapper {...defaultProps} />);

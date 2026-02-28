@@ -5,6 +5,8 @@ use crate::pty::emitter::TauriEventEmitter;
 use crate::pty::types::{PtyConfig, PtySpawnResult};
 use crate::pty::PtyManager;
 use crate::scrollback::ScrollbackStorage;
+use crate::settings::manager::SettingsManager;
+use crate::settings::Settings;
 use crate::workspace::WorkspaceState;
 use base64::Engine as _;
 use obelisk_protocol::{LayoutNode, Notification, SplitDirection, WorkspaceInfo};
@@ -18,16 +20,22 @@ pub struct AppState {
     pub session_manager: SessionManager,
     pub scrollback_storage: ScrollbackStorage,
     pub notification_store: Arc<RwLock<NotificationStore>>,
+    pub settings_manager: SettingsManager,
 }
 
 impl AppState {
-    pub fn new(session_manager: SessionManager, scrollback_storage: ScrollbackStorage) -> Self {
+    pub fn new(
+        session_manager: SessionManager,
+        scrollback_storage: ScrollbackStorage,
+        settings_manager: SettingsManager,
+    ) -> Self {
         Self {
             pty_manager: PtyManager::new(Arc::new(crate::pty::backend::RealPtyBackend::new())),
             workspace_state: Arc::new(RwLock::new(WorkspaceState::new())),
             session_manager,
             scrollback_storage,
             notification_store: Arc::new(RwLock::new(NotificationStore::new(1000))),
+            settings_manager,
         }
     }
 }
@@ -466,6 +474,36 @@ pub fn notification_clear(state: State<'_, AppState>) -> Result<(), BackendError
         .write()
         .expect("notification store lock poisoned");
     store.clear();
+    Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub fn settings_get(state: State<'_, AppState>) -> Result<Settings, BackendError> {
+    Ok(state.settings_manager.get())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state, app))]
+pub fn settings_update(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), BackendError> {
+    state.settings_manager.update(&key, value)?;
+    let _ = app.emit("settings-changed", state.settings_manager.get());
+    Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state, app))]
+pub fn settings_reset(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), BackendError> {
+    state.settings_manager.reset()?;
+    let _ = app.emit("settings-changed", state.settings_manager.get());
     Ok(())
 }
 

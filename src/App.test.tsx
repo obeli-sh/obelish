@@ -4,22 +4,9 @@ import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { clearEventMocks } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { useUiStore } from './stores/uiStore';
+import * as TerminalPaneModule from './components/terminal/TerminalPane';
 import App from './App';
 import type { WorkspaceInfo } from './lib/workspace-types';
-
-// Mock TerminalPane to avoid xterm.js complexity
-vi.mock('./components/terminal/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ paneId }: { paneId: string }) => (
-    <div data-testid={`terminal-pane-${paneId}`} />
-  )),
-}));
-
-// Mock ResizeObserver
-vi.stubGlobal('ResizeObserver', vi.fn(() => ({
-  observe: vi.fn(),
-  disconnect: vi.fn(),
-  unobserve: vi.fn(),
-})));
 
 function makeWorkspace(id: string, name: string): WorkspaceInfo {
   return {
@@ -33,13 +20,20 @@ function makeWorkspace(id: string, name: string): WorkspaceInfo {
 
 describe('App', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     clearInvokeMocks();
     clearEventMocks();
+    // Mock TerminalPane to avoid xterm.js complexity
+    vi.spyOn(TerminalPaneModule, 'TerminalPane').mockImplementation(
+      ({ paneId }: { paneId: string }) => (
+        <div data-testid={`terminal-pane-${paneId}`} />
+      ),
+    );
     useWorkspaceStore.setState({ workspaces: {}, activeWorkspaceId: null });
     useUiStore.setState({ focusedPaneId: null, sidebarOpen: true });
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
+    mockInvoke('scrollback_load', () => null);
   });
 
   it('renders AppLayout with loading state initially', () => {

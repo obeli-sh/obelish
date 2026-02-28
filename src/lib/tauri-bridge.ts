@@ -45,4 +45,9 @@ export const tauriBridge = {
     markRead: (id: string) => invoke<void>('notification_mark_read', { id }),
     clear: () => invoke<void>('notification_clear'),
   },
+  settings: {
+    get: () => invoke<Record<string, unknown>>('settings_get'),
+    update: (settings: Record<string, unknown>) => invoke<void>('settings_update', { settings }),
+    reset: () => invoke<void>('settings_reset'),
+  },
 } as const;

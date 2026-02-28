@@ -1,15 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useUiStore } from '../stores/uiStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { Sidebar } from './sidebar/Sidebar';
 import { SurfaceTabBar } from './layout/SurfaceTabBar';
 import { PaneSplitter } from './layout/PaneSplitter';
 import { NotificationPanel } from './notifications/NotificationPanel';
+import { CommandPalette } from './palette/CommandPalette';
+import { SettingsModal } from './settings/SettingsModal';
+import { KeybindingEditor } from './settings/KeybindingEditor';
 import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { useNotificationListener } from '../hooks/useNotificationListener';
 import { tauriBridge } from '../lib/tauri-bridge';
+import { getCommands, getCommandById } from '../lib/commands';
 import { listen } from '@tauri-apps/api/event';
 import type { WorkspaceChangedEvent } from '../lib/workspace-types';
+import type { KeyBinding } from '../lib/keybinding-utils';
 
 export function AppLayout() {
   const [loading, setLoading] = useState(true);
@@ -23,11 +29,34 @@ export function AppLayout() {
   const focusedPaneId = useUiStore((s) => s.focusedPaneId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const notificationPanelOpen = useUiStore((s) => s.notificationPanelOpen);
+  const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
   const setFocusedPane = useUiStore((s) => s.setFocusedPane);
   const toggleNotificationPanel = useUiStore((s) => s.toggleNotificationPanel);
+  const toggleCommandPalette = useUiStore((s) => s.toggleCommandPalette);
+  const toggleSettings = useUiStore((s) => s.toggleSettings);
+
+  const keybindings = useSettingsStore((s) => s.keybindings);
+  const updateKeybinding = useSettingsStore((s) => s.updateKeybinding);
+  const resetKeybinding = useSettingsStore((s) => s.resetKeybinding);
+
+  const commands = getCommands();
 
   useAppShortcuts();
   useNotificationListener();
+
+  const handleCommandExecute = useCallback((commandId: string) => {
+    const cmd = getCommandById(commandId);
+    if (cmd) cmd.execute();
+  }, []);
+
+  const handleKeybindingUpdate = useCallback((commandId: string, binding: KeyBinding) => {
+    updateKeybinding(commandId, binding);
+  }, [updateKeybinding]);
+
+  const handleKeybindingReset = useCallback((commandId: string) => {
+    resetKeybinding(commandId);
+  }, [resetKeybinding]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +115,25 @@ export function AppLayout() {
       cancelled = true;
       unlistenChanged?.();
       unlistenRemoved?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenSettings: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenSettings = await listen<Record<string, unknown>>('settings-changed', (event) => {
+        if (cancelled) return;
+        useSettingsStore.getState()._syncSettings(event.payload as Partial<typeof keybindings>);
+      });
+      if (cancelled) { unlistenSettings?.(); }
+    };
+
+    setup();
+    return () => {
+      cancelled = true;
+      unlistenSettings?.();
     };
   }, []);
 
@@ -174,6 +222,20 @@ export function AppLayout() {
       {notificationPanelOpen && (
         <NotificationPanel isOpen={notificationPanelOpen} onClose={toggleNotificationPanel} />
       )}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={toggleCommandPalette}
+        commands={commands}
+        onExecute={handleCommandExecute}
+      />
+      <SettingsModal isOpen={settingsOpen} onClose={toggleSettings}>
+        <KeybindingEditor
+          commands={commands}
+          keybindings={keybindings}
+          onUpdate={handleKeybindingUpdate}
+          onReset={handleKeybindingReset}
+        />
+      </SettingsModal>
     </div>
   );
 }

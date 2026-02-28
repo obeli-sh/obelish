@@ -41,6 +41,8 @@ describe('uiStore', () => {
       focusedPaneId: null,
       sidebarOpen: true,
       notificationPanelOpen: false,
+      commandPaletteOpen: false,
+      settingsOpen: false,
     });
     useWorkspaceStore.setState({
       workspaces: {},
@@ -84,6 +86,34 @@ describe('uiStore', () => {
       expect(useUiStore.getState().notificationPanelOpen).toBe(true);
       useUiStore.getState().toggleNotificationPanel();
       expect(useUiStore.getState().notificationPanelOpen).toBe(false);
+    });
+  });
+
+  describe('toggleCommandPalette', () => {
+    it('toggles commandPaletteOpen state', () => {
+      expect(useUiStore.getState().commandPaletteOpen).toBe(false);
+      useUiStore.getState().toggleCommandPalette();
+      expect(useUiStore.getState().commandPaletteOpen).toBe(true);
+      useUiStore.getState().toggleCommandPalette();
+      expect(useUiStore.getState().commandPaletteOpen).toBe(false);
+    });
+
+    it('starts with commandPaletteOpen=false', () => {
+      expect(useUiStore.getState().commandPaletteOpen).toBe(false);
+    });
+  });
+
+  describe('toggleSettings', () => {
+    it('toggles settingsOpen state', () => {
+      expect(useUiStore.getState().settingsOpen).toBe(false);
+      useUiStore.getState().toggleSettings();
+      expect(useUiStore.getState().settingsOpen).toBe(true);
+      useUiStore.getState().toggleSettings();
+      expect(useUiStore.getState().settingsOpen).toBe(false);
+    });
+
+    it('starts with settingsOpen=false', () => {
+      expect(useUiStore.getState().settingsOpen).toBe(false);
     });
   });
 

@@ -1,24 +1,28 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import type { LayoutNode } from '../../../lib/workspace-types';
-
-vi.mock('react-resizable-panels');
-vi.mock('../../terminal/TerminalPane', () => ({
-  TerminalPane: vi.fn(({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
-    <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
-  )),
-}));
-vi.mock('../../browser/BrowserPane', () => ({
-  BrowserPane: vi.fn(({ paneId, url, isActive }: { paneId: string; url: string; isActive: boolean }) => (
-    <div data-testid={`browser-pane-${paneId}`} data-url={url} data-active={isActive} />
-  )),
-}));
-
+import * as TerminalPaneModule from '../../terminal/TerminalPane';
+import * as BrowserPaneModule from '../../browser/BrowserPane';
 import { PaneSplitter } from '../PaneSplitter';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
 
 describe('PaneSplitter', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(TerminalPaneModule, 'TerminalPane').mockImplementation(
+      ({ paneId, ptyId, isActive }: { paneId: string; ptyId: string; isActive: boolean }) => (
+        <div data-testid={`terminal-pane-${paneId}`} data-pty-id={ptyId} data-active={isActive} />
+      ),
+    );
+    vi.spyOn(BrowserPaneModule, 'BrowserPane').mockImplementation(
+      ({ paneId, url, isActive }: { paneId: string; url: string; isActive: boolean }) => (
+        <div data-testid={`browser-pane-${paneId}`} data-url={url} data-active={isActive} />
+      ),
+    );
+    useWorkspaceStore.setState({ browserPaneUrls: {} });
+  });
+
   it('renders single leaf as PaneWrapper with correct ptyId', () => {
     const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' };
 
