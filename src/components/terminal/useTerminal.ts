@@ -49,14 +49,15 @@ export function useTerminal(paneId: string, ptyId: string) {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
 
-    const loadScrollback = async () => {
+    const init = async () => {
+      // Load scrollback first so restored content appears before live PTY data
       const data = await tauriBridge.scrollback.load(paneId);
-      if (cancelled || !data) return;
-      terminal.write(atob(data));
-    };
-    loadScrollback();
+      if (cancelled) return;
+      if (data) {
+        terminal.write(atob(data));
+      }
 
-    const setupListener = async () => {
+      // Only start listening for PTY data after scrollback is restored
       unlisten = await listen<{ data: string }>(`pty-data-${ptyId}`, (event) => {
         const bytes = atob(event.payload.data);
         const arr = new Uint8Array(bytes.length);
@@ -71,7 +72,7 @@ export function useTerminal(paneId: string, ptyId: string) {
       }
       unlistenRef.current = unlisten;
     };
-    setupListener();
+    init();
 
     const dataDisposable = terminal.onData((data: string) => {
       tauriBridge.pty.write(ptyId, btoa(data));

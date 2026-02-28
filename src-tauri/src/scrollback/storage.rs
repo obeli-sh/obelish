@@ -14,12 +14,21 @@ impl ScrollbackStorage {
         Ok(Self { base_dir })
     }
 
-    fn file_path(&self, pane_id: &str) -> PathBuf {
-        self.base_dir.join(format!("{pane_id}.zst"))
+    fn file_path(&self, pane_id: &str) -> Result<PathBuf, PersistenceError> {
+        if pane_id.is_empty()
+            || pane_id.contains('/')
+            || pane_id.contains('\\')
+            || pane_id.contains("..")
+        {
+            return Err(PersistenceError::Corrupted {
+                reason: format!("invalid pane_id: {pane_id}"),
+            });
+        }
+        Ok(self.base_dir.join(format!("{pane_id}.zst")))
     }
 
     pub fn save(&self, pane_id: &str, data: &[u8]) -> Result<(), PersistenceError> {
-        let path = self.file_path(pane_id);
+        let path = self.file_path(pane_id)?;
         let compressed = zstd::encode_all(data, 3)
             .map_err(PersistenceError::Io)?;
         fs::write(&path, &compressed)?;
@@ -27,7 +36,7 @@ impl ScrollbackStorage {
     }
 
     pub fn load(&self, pane_id: &str) -> Result<Option<Vec<u8>>, PersistenceError> {
-        let path = self.file_path(pane_id);
+        let path = self.file_path(pane_id)?;
         match fs::read(&path) {
             Ok(compressed) => {
                 let data = zstd::decode_all(compressed.as_slice())
@@ -40,7 +49,7 @@ impl ScrollbackStorage {
     }
 
     pub fn delete(&self, pane_id: &str) -> Result<(), PersistenceError> {
-        let path = self.file_path(pane_id);
+        let path = self.file_path(pane_id)?;
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -130,6 +139,36 @@ mod tests {
 
         let loaded = storage.load("pane-del").unwrap();
         assert_eq!(loaded, None);
+    }
+
+    #[test]
+    fn rejects_path_traversal_with_slash() {
+        let (_dir, storage) = setup();
+        let result = storage.save("../../etc/evil", b"bad data");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid pane_id"));
+    }
+
+    #[test]
+    fn rejects_path_traversal_with_backslash() {
+        let (_dir, storage) = setup();
+        let result = storage.load("..\\..\\etc\\evil");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_empty_pane_id() {
+        let (_dir, storage) = setup();
+        let result = storage.save("", b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_dotdot_pane_id() {
+        let (_dir, storage) = setup();
+        let result = storage.delete("..");
+        assert!(result.is_err());
     }
 
     #[test]

@@ -298,6 +298,11 @@ describe('useTerminal', () => {
       result.current.terminalRef(container);
     });
 
+    // Wait for scrollback_load to finish (listen is called after scrollback)
+    await vi.waitFor(() => {
+      expect(listen).toHaveBeenCalled();
+    });
+
     // Unmount before listen resolves
     unmount();
 
@@ -455,15 +460,55 @@ describe('useTerminal', () => {
     // Unmount before scrollback load resolves
     unmount();
 
+    // Capture write call count before resolving the late load
+    const terminal = result.current.terminal.current;
+    // Terminal ref is null after dispose
+    expect(terminal).toBeNull();
+
     // Resolve the load after unmount
     await act(async () => {
       resolveLoad('aGVsbG8=');
     });
 
-    // terminal.write should NOT have been called with scrollback data
-    // because the component was already unmounted
-    const terminal = result.current.terminal.current;
-    // Terminal was disposed, so we check that write was NOT called with decoded scrollback
-    // The key check is that no error occurred
+    // terminal.current should still be null — no writes happened after dispose
+    expect(result.current.terminal.current).toBeNull();
+  });
+
+  it('restores scrollback before subscribing to PTY events', async () => {
+    const callOrder: string[] = [];
+
+    // Track when scrollback_load is called
+    mockInvoke('scrollback_load', () => {
+      callOrder.push('scrollback_load');
+      return 'aGVsbG8='; // "hello"
+    });
+
+    // Track when listen is called
+    (listen as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string) => {
+        if (event.startsWith('pty-data-')) {
+          callOrder.push('listen_pty_data');
+        }
+        const unlistenFn = vi.fn();
+        return Promise.resolve(unlistenFn);
+      }
+    );
+
+    const container = createContainer();
+    const { result } = renderHook(() => useTerminal('pane-1', 'pty-1'));
+
+    act(() => {
+      result.current.terminalRef(container);
+    });
+
+    await vi.waitFor(() => {
+      expect(callOrder).toContain('scrollback_load');
+      expect(callOrder).toContain('listen_pty_data');
+    });
+
+    // scrollback_load must come before listen for pty-data
+    const scrollbackIdx = callOrder.indexOf('scrollback_load');
+    const listenIdx = callOrder.indexOf('listen_pty_data');
+    expect(scrollbackIdx).toBeLessThan(listenIdx);
   });
 });
