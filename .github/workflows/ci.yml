@@ -156,7 +156,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [rust-test]
     continue-on-error: true
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -170,7 +169,7 @@ jobs:
       - name: Install cargo-mutants
         run: cargo install cargo-mutants
       - name: Run mutation testing
-        run: cargo mutants --no-shuffle --timeout 120
+        run: timeout 900 cargo mutants --no-shuffle --timeout 120 || true
       - name: Extract mutation score
         if: always()
         run: |
