@@ -457,6 +457,49 @@ describe('browser-mock', () => {
       const resultChildren = resultLayout.children as Array<Record<string, unknown>>;
       expect(resultChildren[1].paneId).toBe(paneA);
     });
+
+    it('pane_move with source pane not found in any surface returns unchanged workspace', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      // Source pane doesn't exist in any workspace => sourceSurfaceIdx < 0
+      const result = await mockInvoke('pane_move', {
+        paneId: 'nonexistent-pane',
+        targetPaneId: rootPaneId,
+        position: 'left',
+      }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+    });
+
+    it('pane_move with source having no ptyId returns unchanged workspace', async () => {
+      // Open a browser pane (ptyId = '') then try to move it
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const opened = await mockInvoke('pane_open_browser', {
+        paneId: rootPaneId,
+        url: 'about:blank',
+        direction: 'horizontal',
+      }) as Record<string, unknown>;
+
+      const layout = ((opened.surfaces as Array<Record<string, unknown>>)[0].layout) as Record<string, unknown>;
+      const children = layout.children as Array<Record<string, unknown>>;
+      const browserPaneId = children[1].paneId as string;
+      const terminalPaneId = children[0].paneId as string;
+
+      // Browser pane has ptyId '' which is falsy => sourcePtyId null => early return
+      const result = await mockInvoke('pane_move', {
+        paneId: browserPaneId,
+        targetPaneId: terminalPaneId,
+        position: 'left',
+      }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+      expect(result).toHaveProperty('surfaces');
+    });
   });
 
   describe('mockListen', () => {

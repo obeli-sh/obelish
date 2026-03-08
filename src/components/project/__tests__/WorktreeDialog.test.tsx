@@ -151,4 +151,159 @@ describe('WorktreeDialog', () => {
     );
     expect(screen.getByText(/myproject.*select worktree/i)).toBeInTheDocument();
   });
+
+  it('wraps focus to last item on ArrowUp from first item', async () => {
+    const onSelect = vi.fn();
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+
+    // focusedIndex starts at 0 (first item). ArrowUp should wrap to last item (index 1).
+    const dialog = screen.getByText(/select worktree/i).closest('[tabindex]') as HTMLElement;
+    fireEvent.keyDown(dialog, { key: 'ArrowUp' });
+
+    // Now press Enter to select the focused item (should be second worktree at index 1)
+    fireEvent.keyDown(dialog, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith({
+      path: '/repo/.worktrees/feat',
+      branch: 'feat',
+      isMain: false,
+    });
+  });
+
+  it('selects focused worktree on Enter key', async () => {
+    const onSelect = vi.fn();
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+
+    const dialog = screen.getByText(/select worktree/i).closest('[tabindex]') as HTMLElement;
+
+    // ArrowDown moves focus from 0 to 1
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    // Enter selects focused worktree at index 1
+    fireEvent.keyDown(dialog, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith({
+      path: '/repo/.worktrees/feat',
+      branch: 'feat',
+      isMain: false,
+    });
+  });
+
+  it('wraps focus to first item on ArrowDown from last item', async () => {
+    const onSelect = vi.fn();
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+
+    const dialog = screen.getByText(/select worktree/i).closest('[tabindex]') as HTMLElement;
+
+    // Move to index 1
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    // ArrowDown from last item (index 1) should wrap to first (index 0)
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    // Enter selects focused worktree at index 0
+    fireEvent.keyDown(dialog, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith({
+      path: '/repo',
+      branch: 'main',
+      isMain: true,
+    });
+  });
+
+  it('shows error when worktree list fails', async () => {
+    mockList.mockRejectedValue(new Error('git error'));
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/git error/i)).toBeInTheDocument();
+    });
+  });
+
+  it('marks open worktrees with "open" badge', async () => {
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        openWorktreePaths={['/repo']}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+    expect(screen.getByText('open')).toBeInTheDocument();
+  });
+
+  it('closes dialog on Escape in branch name input', async () => {
+    const onClose = vi.fn();
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+
+    const input = screen.getByPlaceholderText(/branch name/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows error when create worktree fails', async () => {
+    mockCreate.mockRejectedValue(new Error('branch exists'));
+    render(
+      <WorktreeDialog
+        projectId="p1"
+        projectName="myproject"
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    await screen.findByText(/main \(root\)/);
+
+    const input = screen.getByPlaceholderText(/branch name/i);
+    await userEvent.type(input, 'existing-branch');
+    await userEvent.click(screen.getByText('Create'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/branch exists/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -59,6 +59,7 @@ export default defineConfig({
         "src/vite-env.d.ts",
         "src/test-setup.ts",
         "src/lib/generated/**",
+        "src/lib/workspace-types.ts",
       ],
       thresholds: {
         lines: 95,
