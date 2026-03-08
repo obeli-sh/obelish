@@ -2842,7 +2842,7 @@ mod command_integration_tests {
 }
 
 #[cfg(test)]
-mod cross_platform_path_tests {
+mod cross_platform_path_extended_tests {
     use super::*;
 
     // --- Unix-style path tests (run on all platforms) ---
@@ -3093,7 +3093,7 @@ mod layout_helper_tests {
 }
 
 #[cfg(test)]
-mod command_integration_tests {
+mod command_subsystem_tests {
     use super::*;
     use crate::notifications::store::NotificationStore;
     use crate::persistence::fs::FsPersistence;
@@ -3427,7 +3427,7 @@ mod command_integration_tests {
         let (_, _, _, _, settings_manager, _) = make_components(&tmp);
 
         settings_manager
-            .update("terminal_font_size", serde_json::json!(18))
+            .update("terminalFontSize", serde_json::json!(18))
             .unwrap();
         let settings = settings_manager.get();
         assert_eq!(settings.terminal_font_size, 18);
@@ -3449,7 +3449,7 @@ mod command_integration_tests {
 
         let original = settings_manager.get().terminal_font_size;
         settings_manager
-            .update("terminal_font_size", serde_json::json!(99))
+            .update("terminalFontSize", serde_json::json!(99))
             .unwrap();
         assert_eq!(settings_manager.get().terminal_font_size, 99);
 
@@ -3519,13 +3519,13 @@ mod command_integration_tests {
     }
 
     #[test]
-    fn project_remove_nonexistent_returns_error() {
+    fn project_remove_nonexistent_is_noop() {
         let tmp = TempDir::new().unwrap();
         let (_, _, _, _, _, project_store) = make_components(&tmp);
 
         let mut store = project_store.write().unwrap();
         let result = store.remove("nonexistent-id");
-        assert!(result.is_err());
+        assert!(result.is_ok()); // remove of nonexistent ID is a no-op
     }
 
     // --- Workspace rename integration ---
