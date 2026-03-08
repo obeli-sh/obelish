@@ -73,7 +73,7 @@ exports[`NotificationPanel snapshots > matches snapshot with notifications 1`] =
           style="display: flex; justify-content: space-between; color: var(--ui-text-muted); font-size: 11px; margin-top: 4px; font-family: var(--ui-font-mono);"
         >
           <span>
-            844d ago
+            845d ago
           </span>
           <span>
             pane: 
@@ -99,7 +99,7 @@ exports[`NotificationPanel snapshots > matches snapshot with notifications 1`] =
           style="display: flex; justify-content: space-between; color: var(--ui-text-muted); font-size: 11px; margin-top: 4px; font-family: var(--ui-font-mono);"
         >
           <span>
-            844d ago
+            845d ago
           </span>
           <span>
             pane: 

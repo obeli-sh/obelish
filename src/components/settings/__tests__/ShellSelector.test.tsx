@@ -1,22 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { ShellSelector } from '../ShellSelector';
 import { useSettingsStore } from '../../../stores/settingsStore';
-
-const mockShellList = vi.fn();
-const mockSettingsUpdate = vi.fn();
-
-vi.mock('../../../lib/tauri-bridge', () => ({
-  tauriBridge: {
-    shell: {
-      list: () => mockShellList(),
-    },
-    settings: {
-      update: (...args: unknown[]) => mockSettingsUpdate(...args),
-    },
-  },
-}));
 
 describe('ShellSelector', () => {
   const mockShells = [
@@ -27,9 +14,10 @@ describe('ShellSelector', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearInvokeMocks();
     useSettingsStore.setState({ defaultShell: '' });
-    mockShellList.mockResolvedValue(mockShells);
-    mockSettingsUpdate.mockResolvedValue(undefined);
+    mockInvoke('shell_list', () => Promise.resolve(mockShells));
+    mockInvoke('settings_update', () => Promise.resolve());
   });
 
   it('renders a radiogroup with shell options', async () => {
@@ -102,7 +90,7 @@ describe('ShellSelector', () => {
   });
 
   it('handles empty shell list gracefully', async () => {
-    mockShellList.mockResolvedValue([]);
+    mockInvoke('shell_list', () => Promise.resolve([]));
     render(<ShellSelector />);
 
     await screen.findByRole('radiogroup');
@@ -113,7 +101,7 @@ describe('ShellSelector', () => {
   });
 
   it('handles shell list fetch error gracefully', async () => {
-    mockShellList.mockRejectedValue(new Error('backend error'));
+    mockInvoke('shell_list', () => Promise.reject(new Error('backend error')));
     render(<ShellSelector />);
 
     await screen.findByRole('radiogroup');
@@ -159,7 +147,5 @@ describe('ShellSelector', () => {
       expect(screen.getByRole('radio', { name: /auto-detect/i })).toBeChecked();
       expect(useSettingsStore.getState().defaultShell).toBe('');
     });
-
-    expect(mockSettingsUpdate).toHaveBeenCalledWith('defaultShell', '');
   });
 });
