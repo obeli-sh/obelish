@@ -34,7 +34,10 @@ fn handle_workspace_list<C: IpcContext>(context: &C, id: Value) -> RpcResponse {
         .read()
         .expect("workspace state lock poisoned");
     let workspaces = ws.list_workspaces().to_vec();
-    RpcResponse::success(id, serde_json::to_value(workspaces).unwrap())
+    match serde_json::to_value(workspaces) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_workspace_create<C: IpcContext>(
@@ -84,7 +87,10 @@ fn handle_workspace_create<C: IpcContext>(
 
     context.session_manager().mark_dirty();
 
-    RpcResponse::success(id, serde_json::to_value(workspace).unwrap())
+    match serde_json::to_value(workspace) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_workspace_close<C: IpcContext>(
@@ -235,7 +241,10 @@ fn handle_session_info<C: IpcContext>(context: &C, id: Value) -> RpcResponse {
         uptime_secs: uptime,
     };
 
-    RpcResponse::success(id, serde_json::to_value(result).unwrap())
+    match serde_json::to_value(result) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_session_save<C: IpcContext>(context: &C, id: Value) -> RpcResponse {

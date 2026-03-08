@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "mutate": [
+    "src/stores/workspaceStore.ts",
+    "src/lib/tauri-bridge.ts"
+  ],
+  "reporters": ["clear-text", "html"],
+  "coverageAnalysis": "perTest",
+  "timeoutMS": 30000
+}
