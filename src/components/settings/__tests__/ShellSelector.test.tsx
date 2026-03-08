@@ -1,10 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { invoke } from '@tauri-apps/api/core';
-import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { ShellSelector } from '../ShellSelector';
 import { useSettingsStore } from '../../../stores/settingsStore';
+
+const mockShellList = vi.fn();
+const mockSettingsUpdate = vi.fn();
+
+vi.mock('../../../lib/tauri-bridge', () => ({
+  tauriBridge: {
+    shell: {
+      list: () => mockShellList(),
+    },
+    settings: {
+      update: (...args: unknown[]) => mockSettingsUpdate(...args),
+    },
+  },
+}));
 
 describe('ShellSelector', () => {
   const mockShells = [
@@ -15,10 +27,9 @@ describe('ShellSelector', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearInvokeMocks();
     useSettingsStore.setState({ defaultShell: '' });
-    mockInvoke('shell_list', () => Promise.resolve(mockShells));
-    mockInvoke('settings_update', () => Promise.resolve());
+    mockShellList.mockResolvedValue(mockShells);
+    mockSettingsUpdate.mockResolvedValue(undefined);
   });
 
   it('renders a radiogroup with shell options', async () => {
@@ -91,7 +102,7 @@ describe('ShellSelector', () => {
   });
 
   it('handles empty shell list gracefully', async () => {
-    mockInvoke('shell_list', () => Promise.resolve([]));
+    mockShellList.mockResolvedValue([]);
     render(<ShellSelector />);
 
     await screen.findByRole('radiogroup');
@@ -102,7 +113,7 @@ describe('ShellSelector', () => {
   });
 
   it('handles shell list fetch error gracefully', async () => {
-    mockInvoke('shell_list', () => Promise.reject(new Error('backend error')));
+    mockShellList.mockRejectedValue(new Error('backend error'));
     render(<ShellSelector />);
 
     await screen.findByRole('radiogroup');
@@ -149,6 +160,6 @@ describe('ShellSelector', () => {
       expect(useSettingsStore.getState().defaultShell).toBe('');
     });
 
-    expect(invoke).toHaveBeenCalledWith('settings_update', { key: 'defaultShell', value: '' });
+    expect(mockSettingsUpdate).toHaveBeenCalledWith('defaultShell', '');
   });
 });
