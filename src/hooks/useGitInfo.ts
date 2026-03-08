@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { safeListen } from '../lib/safe-listen';
 import type { GitInfo } from '../lib/workspace-types';
 
 export function useGitInfo(paneId: string): GitInfo | null {
@@ -10,7 +10,7 @@ export function useGitInfo(paneId: string): GitInfo | null {
     let unlisten: (() => void) | null = null;
 
     const setup = async () => {
-      unlisten = await listen<GitInfo>(`git-info-${paneId}`, (event) => {
+      unlisten = await safeListen<GitInfo>(`git-info-${paneId}`, (event) => {
         if (!cancelled) setInfo(event.payload);
       });
       if (cancelled) unlisten?.();

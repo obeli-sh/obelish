@@ -1,18 +1,31 @@
 import { useGitInfo } from '../../hooks/useGitInfo';
+import { usePaneCwd } from '../../hooks/usePaneCwd';
 import { usePortScanner } from '../../hooks/usePortScanner';
 
 interface WorkspaceMetadataProps {
   paneId: string;
+  ptyId: string | null;
 }
 
-export function WorkspaceMetadata({ paneId }: WorkspaceMetadataProps) {
+function shortenPath(path: string): string {
+  const home = path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~');
+  return home;
+}
+
+export function WorkspaceMetadata({ paneId, ptyId }: WorkspaceMetadataProps) {
   const gitInfo = useGitInfo(paneId);
   const ports = usePortScanner(paneId);
+  const cwd = usePaneCwd(ptyId);
 
-  if (!gitInfo && ports.length === 0) return null;
+  if (!gitInfo && ports.length === 0 && !cwd) return null;
 
   return (
     <div style={containerStyle}>
+      {cwd && (
+        <div data-testid="cwd-info" style={cwdStyle} title={cwd}>
+          {shortenPath(cwd)}
+        </div>
+      )}
       {gitInfo && (
         <div data-testid="git-info" style={rowStyle}>
           <span style={branchStyle}>
@@ -43,7 +56,9 @@ export function WorkspaceMetadata({ paneId }: WorkspaceMetadataProps) {
 const containerStyle: React.CSSProperties = {
   padding: '0 8px 4px',
   fontSize: '11px',
-  color: '#a6adc8',
+  color: 'var(--ui-text-muted)',
+  fontFamily: 'var(--ui-font-mono)',
+  letterSpacing: '0.04em',
 };
 
 const rowStyle: React.CSSProperties = {
@@ -60,7 +75,7 @@ const branchStyle: React.CSSProperties = {
 };
 
 const dirtyStyle: React.CSSProperties = {
-  color: '#f9e2af',
+  color: 'var(--ui-accent)',
 };
 
 const syncStyle: React.CSSProperties = {
@@ -68,6 +83,12 @@ const syncStyle: React.CSSProperties = {
   gap: '4px',
 };
 
+const cwdStyle: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
 const portStyle: React.CSSProperties = {
-  color: '#94e2d5',
+  color: 'var(--ui-accent)',
 };

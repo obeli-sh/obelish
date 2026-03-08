@@ -15,6 +15,7 @@ interface WorkspaceStoreState {
   _removeWorkspace: (id: string) => void;
   _setActiveWorkspace: (id: string) => void;
   _setBrowserPaneUrl: (paneId: string, url: string) => void;
+  _removeBrowserPaneUrl: (paneId: string) => void;
   _reorderWorkspaces: (ids: string[]) => void;
   _setPaneName: (paneId: string, name: string) => void;
   _getOrAssignPaneName: (paneId: string) => string;
@@ -81,6 +82,14 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     set((state) => ({
       browserPaneUrls: { ...state.browserPaneUrls, [paneId]: url },
     }));
+  },
+
+  _removeBrowserPaneUrl: (paneId) => {
+    set((state) => {
+      const next = { ...state.browserPaneUrls };
+      delete next[paneId];
+      return { browserPaneUrls: next };
+    });
   },
 
   _reorderWorkspaces: (ids) => {

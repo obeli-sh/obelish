@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { safeListen } from '../lib/safe-listen';
 import type { PortInfo } from '../lib/workspace-types';
 
 export function usePortScanner(paneId: string): PortInfo[] {
@@ -10,7 +10,7 @@ export function usePortScanner(paneId: string): PortInfo[] {
     let unlisten: (() => void) | null = null;
 
     const setup = async () => {
-      unlisten = await listen<PortInfo[]>(`ports-changed-${paneId}`, (event) => {
+      unlisten = await safeListen<PortInfo[]>(`ports-changed-${paneId}`, (event) => {
         if (!cancelled) setPorts(event.payload);
       });
       if (cancelled) unlisten?.();

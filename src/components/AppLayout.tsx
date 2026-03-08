@@ -2,20 +2,24 @@ import { useCallback, useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useUiStore } from '../stores/uiStore';
 import { useSettingsStore, type RustSettings } from '../stores/settingsStore';
+import { useProjectStore } from '../stores/projectStore';
 import { Sidebar } from './sidebar/Sidebar';
 import { SurfaceTabBar } from './layout/SurfaceTabBar';
 import { PaneSplitter } from './layout/PaneSplitter';
 import { NotificationPanel } from './notifications/NotificationPanel';
 import { CommandPalette } from './palette/CommandPalette';
 import { SettingsModal } from './settings/SettingsModal';
-import { KeybindingEditor } from './settings/KeybindingEditor';
+import { PreferencesPanel } from './settings/PreferencesPanel';
+import { ProjectPicker } from './project/ProjectPicker';
 import { useAppShortcuts } from '../hooks/useAppShortcuts';
 import { useNotificationListener } from '../hooks/useNotificationListener';
+import { useThemeColors } from '../hooks/useThemeColors';
 import { tauriBridge } from '../lib/tauri-bridge';
 import { getCommands, getCommandById } from '../lib/commands';
 import { getAutoSplitDirection } from '../lib/auto-split';
-import { listen } from '@tauri-apps/api/event';
-import type { WorkspaceChangedEvent, LayoutNode } from '../lib/workspace-types';
+import { safeListen } from '../lib/safe-listen';
+import type { WorkspaceChangedEvent, LayoutNode, PaneDropPosition, ProjectInfo, WorktreeInfo } from '../lib/workspace-types';
+import { WorktreeDialog } from './project/WorktreeDialog';
 import type { KeyBinding } from '../lib/keybinding-utils';
 
 function getFirstLeafPaneId(layout: LayoutNode): string | null {
@@ -28,9 +32,35 @@ function paneExistsInLayout(layout: LayoutNode, paneId: string): boolean {
   return layout.children.some((child) => paneExistsInLayout(child, paneId));
 }
 
+function collectLeafPaneIds(layout: LayoutNode, target: Set<string>) {
+  if (layout.type === 'leaf') {
+    target.add(layout.paneId);
+    return;
+  }
+  collectLeafPaneIds(layout.children[0], target);
+  collectLeafPaneIds(layout.children[1], target);
+}
+
+function findNewPaneId(previousLayout: LayoutNode, nextLayout: LayoutNode): string | null {
+  const previousPaneIds = new Set<string>();
+  const nextPaneIds = new Set<string>();
+  collectLeafPaneIds(previousLayout, previousPaneIds);
+  collectLeafPaneIds(nextLayout, nextPaneIds);
+  for (const paneId of nextPaneIds) {
+    if (!previousPaneIds.has(paneId)) return paneId;
+  }
+  return null;
+}
+
 export function AppLayout() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [worktreeDialogProjectId, setWorktreeDialogProjectId] = useState<string | null>(null);
+
+  const projects = useProjectStore((s) => s.projects);
+  const orderedProjectIds = useProjectStore((s) => s.orderedProjectIds);
 
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
@@ -40,6 +70,8 @@ export function AppLayout() {
 
   const focusedPaneId = useUiStore((s) => s.focusedPaneId);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const projectPickerOpen = useUiStore((s) => s.projectPickerOpen);
+  const setProjectPickerOpen = useUiStore((s) => s.setProjectPickerOpen);
   const notificationPanelOpen = useUiStore((s) => s.notificationPanelOpen);
   const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
@@ -56,6 +88,14 @@ export function AppLayout() {
 
   useAppShortcuts();
   useNotificationListener();
+  useThemeColors();
+
+  // Clear add-project error when the picker opens
+  useEffect(() => {
+    if (projectPickerOpen) {
+      setAddProjectError(null);
+    }
+  }, [projectPickerOpen]);
 
   const handlePaneResize = useCallback((paneId: string, width: number, height: number) => {
     if (useUiStore.getState().focusedPaneId === paneId) {
@@ -81,15 +121,18 @@ export function AppLayout() {
 
     const init = async () => {
       try {
-        const [list, savedSettings] = await Promise.all([
+        const [list, savedSettings, projectList] = await Promise.all([
           tauriBridge.session.restore(),
           tauriBridge.settings.get().catch(() => null),
+          tauriBridge.project.list().catch(() => [] as ProjectInfo[]),
         ]);
         if (cancelled) return;
 
         if (savedSettings) {
           useSettingsStore.getState()._syncSettings(savedSettings as unknown as RustSettings);
         }
+
+        useProjectStore.getState()._syncProjects(projectList);
 
         for (const ws of list) {
           useWorkspaceStore.getState()._syncWorkspace(ws);
@@ -124,14 +167,14 @@ export function AppLayout() {
     let unlistenRemoved: (() => void) | null = null;
 
     const setup = async () => {
-      unlistenChanged = await listen<WorkspaceChangedEvent>('workspace-changed', (event) => {
+      unlistenChanged = await safeListen<WorkspaceChangedEvent>('workspace-changed', (event) => {
         if (cancelled) return;
         const { workspace } = event.payload;
         useWorkspaceStore.getState()._syncWorkspace(workspace);
       });
       if (cancelled) { unlistenChanged?.(); return; }
 
-      unlistenRemoved = await listen<{ workspaceId: string }>('workspace-removed', (event) => {
+      unlistenRemoved = await safeListen<{ workspaceId: string }>('workspace-removed', (event) => {
         if (cancelled) return;
         useWorkspaceStore.getState()._removeWorkspace(event.payload.workspaceId);
       });
@@ -151,7 +194,7 @@ export function AppLayout() {
     let unlistenSettings: (() => void) | null = null;
 
     const setup = async () => {
-      unlistenSettings = await listen<RustSettings>('settings-changed', (event) => {
+      unlistenSettings = await safeListen<RustSettings>('settings-changed', (event) => {
         if (cancelled) return;
         useSettingsStore.getState()._syncSettings(event.payload);
       });
@@ -189,15 +232,82 @@ export function AppLayout() {
     useWorkspaceStore.getState()._setActiveWorkspace(id);
   };
 
-  const handleWorkspaceCreate = async () => {
+  const handleOpenProject = useCallback(async (project: ProjectInfo, worktree: WorktreeInfo) => {
+    useProjectStore.getState()._addProject(project);
+    useProjectStore.getState()._setActiveProject(project.id);
+    setProjectPickerOpen(false);
     try {
-      const ws = await tauriBridge.workspace.create();
+      const ws = await tauriBridge.workspace.create({
+        projectId: project.id,
+        worktreePath: worktree.path,
+        name: worktree.branch ?? undefined,
+      });
       useWorkspaceStore.getState()._syncWorkspace(ws);
       useWorkspaceStore.getState()._setActiveWorkspace(ws.id);
+      const firstSurface = ws.surfaces[ws.activeSurfaceIndex];
+      const firstPaneId = firstSurface ? getFirstLeafPaneId(firstSurface.layout) : null;
+      if (firstPaneId) {
+        useUiStore.getState().setFocusedPane(firstPaneId);
+      }
     } catch (err) {
       console.error('Failed to create workspace:', err);
     }
-  };
+  }, [setProjectPickerOpen]);
+
+  const handleProjectAdd = useCallback(async (rootPath: string): Promise<ProjectInfo | null> => {
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const project = await tauriBridge.project.add(rootPath);
+      useProjectStore.getState()._addProject(project);
+      return project;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setAddProjectError(message);
+      console.error('Failed to add project:', err);
+      return null;
+    } finally {
+      setAddingProject(false);
+    }
+  }, []);
+
+  const handleProjectRemove = useCallback(async (projectId: string) => {
+    try {
+      await tauriBridge.project.remove(projectId);
+      useProjectStore.getState()._removeProject(projectId);
+    } catch (err) {
+      console.error('Failed to remove project:', err);
+    }
+  }, []);
+
+  const handleWorktreeSelect = useCallback(async (worktree: WorktreeInfo) => {
+    const projectId = worktreeDialogProjectId ?? '';
+    setWorktreeDialogProjectId(null);
+    try {
+      const ws = await tauriBridge.workspace.create({
+        projectId,
+        worktreePath: worktree.path,
+        name: worktree.branch ?? undefined,
+      });
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+      useWorkspaceStore.getState()._setActiveWorkspace(ws.id);
+      const firstSurface = ws.surfaces[ws.activeSurfaceIndex];
+      const firstPaneId = firstSurface ? getFirstLeafPaneId(firstSurface.layout) : null;
+      if (firstPaneId) {
+        useUiStore.getState().setFocusedPane(firstPaneId);
+      }
+    } catch (err) {
+      console.error('Failed to create workspace:', err);
+    }
+  }, [worktreeDialogProjectId]);
+
+  const handleWorkspaceCreate = useCallback((projectId: string) => {
+    if (projectId) {
+      setWorktreeDialogProjectId(projectId);
+    } else {
+      setProjectPickerOpen(true);
+    }
+  }, [setProjectPickerOpen]);
 
   const handleWorkspaceClose = async (id: string) => {
     try {
@@ -254,6 +364,7 @@ export function AppLayout() {
       await tauriBridge.pane.close(paneId);
       console.debug('[AppLayout] pane.close returned', paneId);
       useWorkspaceStore.getState()._removePaneName(paneId);
+      useWorkspaceStore.getState()._removeBrowserPaneUrl(paneId);
 
       // Focus the first pane in the updated active workspace (if any)
       const ws = useWorkspaceStore.getState().getActiveWorkspace();
@@ -302,12 +413,39 @@ export function AppLayout() {
 
   const handlePaneOpenBrowser = useCallback(async (paneId: string) => {
     try {
+      const previousLayout = useWorkspaceStore.getState().getActiveSurface()?.layout;
       const ws = await tauriBridge.pane.openBrowser(paneId, 'about:blank', 'vertical');
       useWorkspaceStore.getState()._syncWorkspace(ws);
+
+      if (!previousLayout) return;
+      const nextSurface = ws.surfaces[ws.activeSurfaceIndex];
+      if (!nextSurface) return;
+      const newPaneId = findNewPaneId(previousLayout, nextSurface.layout);
+      if (!newPaneId) return;
+      useWorkspaceStore.getState()._setBrowserPaneUrl(newPaneId, 'about:blank');
     } catch (err) {
       console.error('Failed to open browser:', err);
     }
   }, []);
+
+  const handlePaneMove = useCallback(async (
+    paneId: string,
+    targetPaneId: string,
+    position: PaneDropPosition,
+  ) => {
+    try {
+      const ws = await tauriBridge.pane.move(paneId, targetPaneId, position);
+      useWorkspaceStore.getState()._syncWorkspace(ws);
+    } catch (err) {
+      console.error('Failed to move pane:', err);
+    }
+  }, []);
+
+  const handleOpenPreferences = useCallback(() => {
+    if (!settingsOpen) {
+      toggleSettings();
+    }
+  }, [settingsOpen, toggleSettings]);
 
   const handleSurfaceSelect = (surfaceId: string) => {
     if (!activeWorkspace) return;
@@ -328,29 +466,85 @@ export function AppLayout() {
   };
 
   if (loading) {
-    return <div style={{ padding: 20, color: '#cdd6f4' }}>Loading workspaces...</div>;
+    return (
+      <div
+        className="app-shell"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--ui-text-muted)',
+          fontFamily: 'var(--ui-font-mono)',
+          letterSpacing: '0.08em',
+          fontSize: 12,
+        }}
+      >
+        Loading workspaces...
+      </div>
+    );
   }
 
   if (error) {
-    return <div style={{ padding: 20, color: '#f38ba8' }}>Failed to load workspaces: {error}</div>;
+    return (
+      <div
+        className="app-shell"
+        style={{
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--ui-danger)',
+          fontFamily: 'var(--ui-font-mono)',
+        }}
+      >
+        Failed to load workspaces: {error}
+      </div>
+    );
   }
 
+  const showAllProjects = useSettingsStore((s) => s.showAllProjects);
+
   const workspaceList = orderedIds.map((id) => workspaces[id]).filter(Boolean);
+  const activeProjectIdValue = workspaceList.find(ws => ws.id === activeWorkspaceId)?.projectId;
+
+  const sidebarWorkspaceList = showAllProjects
+    ? workspaceList
+    : workspaceList.filter(ws => !activeProjectIdValue || ws.projectId === activeProjectIdValue);
+
+  const projectList = orderedProjectIds.map(id => projects[id]).filter(Boolean);
 
   return (
-    <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#1e1e2e' }}>
+    <div
+      className="app-shell"
+      style={{
+        display: 'flex',
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden',
+        backgroundColor: 'var(--ui-bg-app)',
+        color: 'var(--ui-text-primary)',
+      }}
+    >
       {sidebarOpen && (
-        <Sidebar
-          workspaces={workspaceList}
-          activeWorkspaceId={activeWorkspaceId ?? ''}
-          onWorkspaceSelect={handleWorkspaceSelect}
-          onWorkspaceCreate={handleWorkspaceCreate}
-          onWorkspaceClose={handleWorkspaceClose}
-          onWorkspaceReorder={handleWorkspaceReorder}
-          onWorkspaceRename={handleWorkspaceRename}
-        />
+        <div style={{ width: 310, minWidth: 260, maxWidth: 420, flexShrink: 0, padding: 0 }}>
+          <Sidebar
+            workspaces={sidebarWorkspaceList}
+            activeWorkspaceId={activeWorkspaceId ?? ''}
+            activeProjectId={activeProjectIdValue}
+            projects={projects}
+            onWorkspaceSelect={handleWorkspaceSelect}
+            onWorkspaceCreate={handleWorkspaceCreate}
+            onWorkspaceClose={handleWorkspaceClose}
+            onWorkspaceReorder={handleWorkspaceReorder}
+            onWorkspaceRename={handleWorkspaceRename}
+            onOpenPreferences={handleOpenPreferences}
+          />
+        </div>
       )}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0, gap: 0 }}>
         {activeWorkspace && activeWorkspace.surfaces.length > 1 && (
           <SurfaceTabBar
             surfaces={activeWorkspace.surfaces}
@@ -360,7 +554,15 @@ export function AppLayout() {
             onSurfaceClose={handleSurfaceClose}
           />
         )}
-        <div style={{ flex: 1, height: '100%', overflow: 'hidden' }}>
+        <div
+          className="panel"
+          style={{
+            flex: 1,
+            height: '100%',
+            overflow: 'hidden',
+            padding: 0,
+          }}
+        >
           {activeSurface && (
             <PaneSplitter
               layout={activeSurface.layout}
@@ -372,7 +574,13 @@ export function AppLayout() {
               onPaneSplitVertical={handlePaneSplitVertical}
               onPaneAutoSplit={handlePaneAutoSplit}
               onPaneOpenBrowser={handlePaneOpenBrowser}
+              onPaneMove={handlePaneMove}
             />
+          )}
+          {!activeSurface && !projectPickerOpen && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--ui-text-muted)', fontFamily: 'var(--ui-font-mono)', fontSize: 12 }}>
+              No workspaces open. Press Ctrl+Shift+O to open a project.
+            </div>
           )}
         </div>
       </div>
@@ -386,13 +594,48 @@ export function AppLayout() {
         onExecute={handleCommandExecute}
       />
       <SettingsModal isOpen={settingsOpen} onClose={toggleSettings}>
-        <KeybindingEditor
+        <PreferencesPanel
           commands={commands}
           keybindings={keybindings}
-          onUpdate={handleKeybindingUpdate}
-          onReset={handleKeybindingReset}
+          onKeybindingUpdate={handleKeybindingUpdate}
+          onKeybindingReset={handleKeybindingReset}
         />
       </SettingsModal>
+      {projectPickerOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          backgroundColor: 'var(--ui-bg-app)',
+        }}>
+          <ProjectPicker
+            projects={projectList}
+            onOpenProject={handleOpenProject}
+            onProjectAdd={handleProjectAdd}
+            onProjectRemove={handleProjectRemove}
+            onEscape={workspaceList.length > 0 ? () => setProjectPickerOpen(false) : undefined}
+            error={addProjectError}
+            loading={addingProject}
+            openWorktreePaths={workspaceList.map(ws => ws.worktreePath).filter(Boolean)}
+          />
+        </div>
+      )}
+      {worktreeDialogProjectId && (
+        <WorktreeDialog
+          projectId={worktreeDialogProjectId}
+          projectName={projects[worktreeDialogProjectId]?.name ?? ''}
+          isOpen={true}
+          onSelect={handleWorktreeSelect}
+          onClose={() => {
+            setWorktreeDialogProjectId(null);
+            if (Object.keys(workspaces).length === 0) {
+              useUiStore.getState().setProjectPickerOpen(true);
+            }
+          }}
+          onAutoSelect={handleWorktreeSelect}
+          openWorktreePaths={workspaceList.map(ws => ws.worktreePath).filter(Boolean)}
+        />
+      )}
     </div>
   );
 }

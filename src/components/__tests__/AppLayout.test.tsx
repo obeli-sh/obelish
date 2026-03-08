@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { invoke } from '@tauri-apps/api/core';
 import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
@@ -15,6 +15,10 @@ function makeWorkspace(id: string, name: string, paneId = 'pane-1', ptyId = 'pty
   return {
     id,
     name,
+    projectId: '',
+    worktreePath: '',
+    branchName: null,
+    isRootWorktree: false,
     surfaces: [{ id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId, ptyId } }],
     activeSurfaceIndex: 0,
     createdAt: Date.now(),
@@ -25,6 +29,10 @@ function makeWorkspaceMultiSurface(id: string, name: string): WorkspaceInfo {
   return {
     id,
     name,
+    projectId: '',
+    worktreePath: '',
+    branchName: null,
+    isRootWorktree: false,
     surfaces: [
       { id: `${id}-s1`, name: 'Surface 1', layout: { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' } },
       { id: `${id}-s2`, name: 'Surface 2', layout: { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' } },
@@ -32,6 +40,23 @@ function makeWorkspaceMultiSurface(id: string, name: string): WorkspaceInfo {
     activeSurfaceIndex: 0,
     createdAt: Date.now(),
   };
+}
+
+function createDataTransfer(): DataTransfer {
+  const store = new Map<string, string>();
+  return {
+    setData: (type: string, value: string) => {
+      store.set(type, value);
+    },
+    getData: (type: string) => store.get(type) ?? '',
+    clearData: () => store.clear(),
+    dropEffect: 'move',
+    effectAllowed: 'all',
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types: [],
+    setDragImage: () => {},
+  } as DataTransfer;
 }
 
 describe('AppLayout', () => {
@@ -57,14 +82,22 @@ describe('AppLayout', () => {
       ),
     );
     // Reset stores
-    useWorkspaceStore.setState({ workspaces: {}, activeWorkspaceId: null, orderedIds: [], paneNames: {}, _nextPaneNumber: 1 });
-    useUiStore.setState({ focusedPaneId: null, sidebarOpen: true, notificationPanelOpen: false });
+    useWorkspaceStore.setState({
+      workspaces: {},
+      activeWorkspaceId: null,
+      orderedIds: [],
+      browserPaneUrls: {},
+      paneNames: {},
+      _nextPaneNumber: 1,
+    });
+    useUiStore.setState({ focusedPaneId: null, sidebarOpen: true, notificationPanelOpen: false, projectPickerOpen: false });
     // Default mocks for commands that may be called
     mockInvoke('pty_write', () => undefined);
     mockInvoke('pty_resize', () => undefined);
     mockInvoke('scrollback_load', () => null);
     mockInvoke('settings_get', () => Promise.resolve(null));
     mockInvoke('workspace_reorder', () => Promise.resolve());
+    mockInvoke('project_list', () => Promise.resolve([]));
   });
 
   it('shows loading state initially', () => {
@@ -121,6 +154,27 @@ describe('AppLayout', () => {
     });
   });
 
+  it('uses edge-to-edge layout without outer content padding', async () => {
+    const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
+    mockInvoke('session_restore', () => Promise.resolve([ws]));
+
+    render(<AppLayout />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
+    });
+
+    const sidebarNav = screen.getByRole('navigation');
+    const sidebarContainer = sidebarNav.parentElement as HTMLDivElement;
+    expect(sidebarContainer.style.padding).toBe('0px');
+
+    const panePanel = screen
+      .getByTestId('terminal-pane-pane-1')
+      .closest('.panel') as HTMLDivElement;
+    expect(panePanel).toBeInTheDocument();
+    expect(panePanel.style.padding).toBe('0px');
+  });
+
   it('handles workspace select', async () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
@@ -140,22 +194,20 @@ describe('AppLayout', () => {
   it('handles workspace create', async () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
-    const newWs = makeWorkspace('ws-new', 'New Workspace', 'pane-new', 'pty-new');
     mockInvoke('session_restore', () => Promise.resolve([ws1]));
-    mockInvoke('workspace_create', () => Promise.resolve(newWs));
 
     render(<AppLayout />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /new workspace/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /open project/i })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /new workspace/i }));
+    await user.click(screen.getByRole('button', { name: /open project/i }));
 
+    // handleWorkspaceCreate('') opens the project picker dialog instead of
+    // directly calling workspace_create
     await waitFor(() => {
-      const state = useWorkspaceStore.getState();
-      expect(state.workspaces['ws-new']).toBeDefined();
-      expect(state.activeWorkspaceId).toBe('ws-new');
+      expect(invoke).not.toHaveBeenCalledWith('workspace_create', expect.anything());
     });
   });
 
@@ -168,8 +220,12 @@ describe('AppLayout', () => {
     render(<AppLayout />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /close workspace 1/i })).toBeInTheDocument();
+      expect(screen.getByText('Workspace 1')).toBeInTheDocument();
     });
+
+    // Hover workspace item to reveal close button (visibility: hidden by default)
+    const wsItem = screen.getByText('Workspace 1').closest('li') as HTMLElement;
+    await user.hover(wsItem);
 
     await user.click(screen.getByRole('button', { name: /close workspace 1/i }));
 
@@ -189,6 +245,10 @@ describe('AppLayout', () => {
     await waitFor(() => {
       expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
     });
+
+    // Hover workspace item to reveal close button
+    const wsItem = screen.getByText('Workspace 1').closest('li') as HTMLElement;
+    await user.hover(wsItem);
 
     await user.click(screen.getByRole('button', { name: /close workspace 1/i }));
 
@@ -212,6 +272,10 @@ describe('AppLayout', () => {
       expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
     });
 
+    // Hover workspace item to reveal close button
+    const wsItem = screen.getByText('Workspace 1').closest('li') as HTMLElement;
+    await user.hover(wsItem);
+
     await user.click(screen.getByRole('button', { name: /close workspace 1/i }));
 
     await waitFor(() => {
@@ -231,6 +295,10 @@ describe('AppLayout', () => {
     await waitFor(() => {
       expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
     });
+
+    // Hover workspace item to reveal close button
+    const wsItem = screen.getByText('Workspace 1').closest('li') as HTMLElement;
+    await user.hover(wsItem);
 
     await user.click(screen.getByRole('button', { name: /close workspace 1/i }));
 
@@ -387,6 +455,10 @@ describe('AppLayout', () => {
     const splitWs: WorkspaceInfo = {
       id: 'ws-1',
       name: 'Split Workspace',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [{
         id: 'ws-1-s1',
         name: 'Surface 1',
@@ -416,6 +488,10 @@ describe('AppLayout', () => {
     const nestedWs: WorkspaceInfo = {
       id: 'ws-1',
       name: 'Nested Workspace',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [{
         id: 'ws-1-s1',
         name: 'Surface 1',
@@ -466,8 +542,9 @@ describe('AppLayout', () => {
     const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
     await user.dblClick(nameButton);
 
-    // Type new name and press Enter
-    const input = screen.getByRole('textbox');
+    // Type new name and press Enter (scope to sidebar to avoid ProjectPicker input)
+    const sidebar = screen.getByRole('navigation');
+    const input = sidebar.querySelector('input') as HTMLInputElement;
     await user.clear(input);
     await user.type(input, 'Renamed{Enter}');
 
@@ -581,6 +658,49 @@ describe('AppLayout', () => {
       });
     });
 
+    it('handlePaneOpenBrowser tracks browser pane url for rendering', async () => {
+      const user = userEvent.setup();
+      const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
+      const browserWorkspace: WorkspaceInfo = {
+        id: 'ws-1',
+        name: 'Workspace 1',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
+        surfaces: [{
+          id: 'ws-1-s1',
+          name: 'Surface 1',
+          layout: {
+            type: 'split',
+            direction: 'vertical',
+            children: [
+              { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+              { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+            ],
+            sizes: [0.5, 0.5],
+          },
+        }],
+        activeSurfaceIndex: 0,
+        createdAt: Date.now(),
+      };
+      mockInvoke('session_restore', () => Promise.resolve([ws]));
+      mockInvoke('pane_open_browser', () => Promise.resolve(browserWorkspace));
+
+      render(<AppLayout />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /open browser pane-1/i }));
+
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().browserPaneUrls['pane-browser']).toBe('about:blank');
+        expect(screen.getByTitle('Browser panel')).toBeInTheDocument();
+      });
+    });
+
     it('handlePaneAutoSplit uses focused pane dimensions to choose direction', async () => {
       const user = userEvent.setup();
       const ws = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
@@ -604,6 +724,72 @@ describe('AppLayout', () => {
 
       await waitFor(() => {
         expect(invoke).toHaveBeenCalledWith('pane_split', { paneId: 'pane-1', direction: 'vertical', shell: undefined });
+      });
+    });
+
+    it('handlePaneMove calls pane_move with drop position when pane is dropped near edge', async () => {
+      const splitWs: WorkspaceInfo = {
+        id: 'ws-1',
+        name: 'Workspace 1',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
+        surfaces: [{
+          id: 'ws-1-s1',
+          name: 'Surface 1',
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            children: [
+              { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+              { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
+            ],
+            sizes: [0.5, 0.5],
+          },
+        }],
+        activeSurfaceIndex: 0,
+        createdAt: Date.now(),
+      };
+      mockInvoke('session_restore', () => Promise.resolve([splitWs]));
+      mockInvoke('pane_move', () => Promise.resolve(splitWs));
+
+      render(<AppLayout />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
+        expect(screen.getByTestId('terminal-pane-pane-2')).toBeInTheDocument();
+      });
+
+      const sourcePane = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const targetPane = screen
+        .getByTestId('terminal-pane-pane-2')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      vi.spyOn(targetPane, 'getBoundingClientRect').mockReturnValue({
+          x: 100,
+          y: 0,
+          left: 100,
+          top: 0,
+          width: 200,
+          height: 100,
+          right: 300,
+          bottom: 100,
+          toJSON: () => ({}),
+        } as DOMRect);
+
+      fireEvent.dragStart(sourcePane, { dataTransfer });
+      dataTransfer.setData('application/x-obelisk-drop-position', 'left');
+      fireEvent.drop(targetPane, { dataTransfer, clientX: 110, clientY: 50 });
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('pane_move', {
+          paneId: 'pane-1',
+          targetPaneId: 'pane-2',
+          position: 'left',
+        });
       });
     });
   });

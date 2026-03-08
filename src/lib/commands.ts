@@ -72,7 +72,7 @@ const commands: Command[] = [
     category: 'workspace',
     defaultBinding: kb('n'),
     execute: () => {
-      tauriBridge.workspace.create();
+      useUiStore.getState().setProjectPickerOpen(true);
     },
   },
   // Workspace switch 1-9
@@ -90,6 +90,16 @@ const commands: Command[] = [
     },
   })),
   // App commands
+  {
+    id: 'app.open-project',
+    label: 'Open Project',
+    description: 'Open a project folder',
+    category: 'app',
+    defaultBinding: kb('o', true, true),
+    execute: () => {
+      useUiStore.getState().setProjectPickerOpen(true);
+    },
+  },
   {
     id: 'app.toggle-notifications',
     label: 'Toggle Notifications',

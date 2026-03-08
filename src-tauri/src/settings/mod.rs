@@ -22,6 +22,8 @@ pub struct Settings {
     pub terminal_font_family: String,
     pub terminal_font_size: u16,
     pub scrollback_lines: u32,
+    #[serde(default)]
+    pub default_shell: String,
 }
 
 impl Default for Settings {
@@ -74,6 +76,7 @@ impl Default for Settings {
             terminal_font_family: "monospace".to_string(),
             terminal_font_size: 14,
             scrollback_lines: 10000,
+            default_shell: String::new(),
         }
     }
 }
@@ -106,6 +109,12 @@ mod tests {
     fn default_settings_has_expected_scrollback() {
         let settings = Settings::default();
         assert_eq!(settings.scrollback_lines, 10000);
+    }
+
+    #[test]
+    fn default_settings_has_empty_default_shell() {
+        let settings = Settings::default();
+        assert_eq!(settings.default_shell, "");
     }
 
     #[test]
@@ -177,6 +186,8 @@ mod tests {
         assert!(parsed.get("terminalFontFamily").is_some());
         assert!(parsed.get("terminalFontSize").is_some());
         assert!(parsed.get("scrollbackLines").is_some());
+        assert!(parsed.get("defaultShell").is_some());
         assert!(parsed.get("terminal_font_family").is_none());
+        assert!(parsed.get("default_shell").is_none());
     }
 }

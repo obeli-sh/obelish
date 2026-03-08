@@ -24,7 +24,7 @@ export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div data-testid="notification-panel" style={panelStyle}>
+    <div data-testid="notification-panel" style={panelStyle} className="panel">
       <div style={headerStyle}>
         <span style={headerTitleStyle}>Notifications</span>
         <button aria-label="Close" style={closeButtonStyle} onClick={onClose}>
@@ -52,10 +52,10 @@ export function NotificationPanel({ isOpen, onClose }: NotificationPanelProps) {
 }
 
 const panelStyle: React.CSSProperties = {
-  width: '300px',
+  width: 320,
   height: '100%',
-  backgroundColor: '#181825',
-  borderLeft: '1px solid #313244',
+  backgroundColor: 'var(--ui-panel-bg)',
+  borderLeft: '1px solid var(--ui-border)',
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
@@ -66,22 +66,25 @@ const headerStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   padding: '12px',
-  borderBottom: '1px solid #313244',
+  borderBottom: '1px solid var(--ui-border)',
 };
 
 const headerTitleStyle: React.CSSProperties = {
-  color: '#cdd6f4',
-  fontWeight: 'bold',
-  fontSize: '14px',
+  color: 'var(--ui-text-muted)',
+  fontFamily: 'var(--ui-font-mono)',
+  letterSpacing: '0.08em',
+  fontSize: 11,
 };
 
 const closeButtonStyle: React.CSSProperties = {
   background: 'none',
-  border: 'none',
-  color: '#a6adc8',
+  border: '1px solid transparent',
+  color: 'var(--ui-text-primary)',
   cursor: 'pointer',
-  fontSize: '18px',
-  padding: '4px 8px',
+  fontSize: 15,
+  padding: '2px 8px',
+  fontFamily: 'var(--ui-font-mono)',
+  borderRadius: 'var(--ui-radius)',
 };
 
 const listStyle: React.CSSProperties = {
@@ -92,31 +95,33 @@ const listStyle: React.CSSProperties = {
 const emptyStyle: React.CSSProperties = {
   padding: '24px',
   textAlign: 'center',
-  color: '#6c7086',
-  fontSize: '13px',
+  color: 'var(--ui-text-muted)',
+  fontSize: 13,
 };
 
 const itemStyle: React.CSSProperties = {
   padding: '10px 12px',
-  borderBottom: '1px solid #313244',
+  borderBottom: '1px solid var(--ui-border)',
 };
 
 const itemTitleStyle: React.CSSProperties = {
-  color: '#cdd6f4',
-  fontSize: '13px',
-  fontWeight: 500,
+  color: 'var(--ui-text-primary)',
+  fontSize: 13,
+  fontFamily: 'var(--ui-font-mono)',
+  letterSpacing: '0.04em',
 };
 
 const itemBodyStyle: React.CSSProperties = {
-  color: '#a6adc8',
-  fontSize: '12px',
+  color: 'var(--ui-text-muted)',
+  fontSize: 12,
   marginTop: '4px',
 };
 
 const itemMetaStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
-  color: '#6c7086',
-  fontSize: '11px',
+  color: 'var(--ui-text-muted)',
+  fontSize: 11,
   marginTop: '4px',
+  fontFamily: 'var(--ui-font-mono)',
 };

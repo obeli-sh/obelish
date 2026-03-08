@@ -1,6 +1,22 @@
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  rootPath: string;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string | null;
+  isMain: boolean;
+}
+
 export interface WorkspaceInfo {
   id: string;
   name: string;
+  projectId: string;
+  worktreePath: string;
+  branchName: string | null;
+  isRootWorktree: boolean;
   surfaces: SurfaceInfo[];
   activeSurfaceIndex: number;
   createdAt: number;
@@ -28,6 +44,7 @@ export interface SplitNode {
 }
 
 export type SplitDirection = 'horizontal' | 'vertical';
+export type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom' | 'center';
 
 export interface PaneInfo {
   id: string;

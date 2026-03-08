@@ -14,6 +14,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { IconSettings, IconUserCircle } from '@tabler/icons-react';
 import type { WorkspaceInfo, LayoutNode } from '../../lib/workspace-types';
 import { WorkspaceMetadata } from './WorkspaceMetadata';
 import { NotificationBadge } from '../notifications/NotificationBadge';
@@ -22,11 +23,14 @@ import { useNotificationStore } from '../../stores/notificationStore';
 export interface SidebarProps {
   workspaces: WorkspaceInfo[];
   activeWorkspaceId: string;
+  activeProjectId?: string;
+  projects?: Record<string, { name: string; rootPath: string }>;
   onWorkspaceSelect: (id: string) => void;
-  onWorkspaceCreate: () => void;
+  onWorkspaceCreate: (projectId: string) => void;
   onWorkspaceClose: (id: string) => void;
   onWorkspaceReorder: (orderedIds: string[]) => void;
   onWorkspaceRename?: (id: string, newName: string) => void;
+  onOpenPreferences?: () => void;
 }
 
 function findFirstLeafPaneId(node: LayoutNode): string | null {
@@ -38,6 +42,17 @@ function getWorkspacePaneId(ws: WorkspaceInfo): string | null {
   const surface = ws.surfaces[ws.activeSurfaceIndex];
   if (!surface) return null;
   return findFirstLeafPaneId(surface.layout);
+}
+
+function findFirstLeafPtyId(node: LayoutNode): string | null {
+  if (node.type === 'leaf') return node.ptyId || null;
+  return findFirstLeafPtyId(node.children[0]);
+}
+
+function getWorkspacePtyId(ws: WorkspaceInfo): string | null {
+  const surface = ws.surfaces[ws.activeSurfaceIndex];
+  if (!surface) return null;
+  return findFirstLeafPtyId(surface.layout);
 }
 
 interface SortableWorkspaceItemProps {
@@ -75,11 +90,14 @@ function SortableWorkspaceItem({
   } = useSortable({ id: ws.id });
 
   // Exclude role from attributes to preserve <li> listitem semantics
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { role: _role, ...restAttributes } = attributes;
 
   const paneId = getWorkspacePaneId(ws);
+  const ptyId = getWorkspacePtyId(ws);
   const isEditing = editingWorkspaceId === ws.id;
   const [editValue, setEditValue] = useState(ws.name);
+  const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
 
@@ -112,6 +130,19 @@ function SortableWorkspaceItem({
     }
   }, [handleSubmit, onFinishEditing]);
 
+  const handleHeaderMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleHeaderAuxClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onWorkspaceClose(ws.id);
+  }, [onWorkspaceClose, ws.id]);
+
   const style: React.CSSProperties = {
     ...itemStyle,
     ...(ws.id === activeWorkspaceId ? activeItemStyle : {}),
@@ -128,9 +159,15 @@ function SortableWorkspaceItem({
       data-active={ws.id === activeWorkspaceId ? 'true' : 'false'}
       data-focused={index === focusedIndex ? 'true' : 'false'}
       style={style}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <div style={itemContentStyle}>
-        <div style={itemHeaderStyle}>
+        <div
+          style={itemHeaderStyle}
+          onMouseDown={handleHeaderMouseDown}
+          onAuxClick={handleHeaderAuxClick}
+        >
           {isEditing ? (
             <input
               ref={inputRef}
@@ -154,13 +191,24 @@ function SortableWorkspaceItem({
           )}
           <button
             aria-label={`Close ${ws.name}`}
-            style={closeButtonStyle}
+            style={{
+              ...closeButtonStyle,
+              opacity: isHovered ? 1 : 0,
+              visibility: isHovered ? 'visible' : 'hidden',
+              transition: 'opacity 0.15s ease',
+            }}
             onClick={() => onWorkspaceClose(ws.id)}
           >
             ×
           </button>
         </div>
-        {paneId && <WorkspaceMetadata paneId={paneId} />}
+        {ws.branchName && (
+          <div style={branchStyle}>{ws.branchName}</div>
+        )}
+        {ws.worktreePath && (
+          <div style={worktreePathStyle}>{ws.worktreePath}</div>
+        )}
+        {paneId && <WorkspaceMetadata paneId={paneId} ptyId={ptyId} />}
       </div>
     </li>
   );
@@ -169,15 +217,53 @@ function SortableWorkspaceItem({
 export function Sidebar({
   workspaces,
   activeWorkspaceId,
+  activeProjectId,
+  projects,
   onWorkspaceSelect,
   onWorkspaceCreate,
   onWorkspaceClose,
   onWorkspaceReorder,
   onWorkspaceRename,
+  onOpenPreferences,
 }: SidebarProps) {
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLUListElement>(null);
+
+  // When there are multiple projects, collapse all except the active one
+  const collapsedInitializedRef = useRef(false);
+  useEffect(() => {
+    if (collapsedInitializedRef.current) return;
+    const projectKeys = new Set<string>();
+    for (const ws of workspaces) {
+      if (ws.projectId) projectKeys.add(ws.projectId);
+    }
+    if (projectKeys.size > 1 && activeProjectId) {
+      const collapsed = new Set<string>();
+      for (const key of projectKeys) {
+        if (key !== activeProjectId) {
+          collapsed.add(key);
+        }
+      }
+      setCollapsedProjects(collapsed);
+      collapsedInitializedRef.current = true;
+    } else if (projectKeys.size > 1) {
+      collapsedInitializedRef.current = true;
+    }
+  }, [workspaces, activeProjectId]);
+
+  const toggleProjectCollapsed = useCallback((projectKey: string) => {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectKey)) {
+        next.delete(projectKey);
+      } else {
+        next.add(projectKey);
+      }
+      return next;
+    });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -211,6 +297,20 @@ export function Sidebar({
     [onWorkspaceSelect],
   );
 
+  const handleWorkspaceListMouseDown = useCallback((e: React.MouseEvent<HTMLUListElement>) => {
+    if (e.button !== 1) return;
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+  }, []);
+
+  const handleWorkspaceListAuxClick = useCallback((e: React.MouseEvent<HTMLUListElement>) => {
+    if (e.button !== 1) return;
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    const firstProjectId = workspaces[0]?.projectId ?? '';
+    onWorkspaceCreate(firstProjectId);
+  }, [onWorkspaceCreate, workspaces]);
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -232,12 +332,17 @@ export function Sidebar({
 
   const unreadCount = useNotificationStore((s) => s.unreadCount());
 
+  // Group workspaces by project
+  const groupedWorkspaces = new Map<string, WorkspaceInfo[]>();
+  for (const ws of workspaces) {
+    const key = ws.projectId || '__ungrouped__';
+    const group = groupedWorkspaces.get(key) ?? [];
+    group.push(ws);
+    groupedWorkspaces.set(key, group);
+  }
+
   return (
-    <nav style={navStyle} onKeyDown={handleKeyDown}>
-      <div style={sidebarHeaderStyle}>
-        <span>Workspaces</span>
-        <NotificationBadge count={unreadCount} />
-      </div>
+    <nav className="panel" style={navStyle} onKeyDown={handleKeyDown}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -247,67 +352,113 @@ export function Sidebar({
           items={workspaces.map((ws) => ws.id)}
           strategy={verticalListSortingStrategy}
         >
-          <ul ref={listRef} role="list" style={listStyle}>
-            {workspaces.map((ws, index) => (
-              <SortableWorkspaceItem
-                key={ws.id}
-                ws={ws}
-                index={index}
-                activeWorkspaceId={activeWorkspaceId}
-                focusedIndex={focusedIndex}
-                editingWorkspaceId={editingWorkspaceId}
-                onWorkspaceClick={handleWorkspaceClick}
-                onWorkspaceClose={onWorkspaceClose}
-                onStartEditing={setEditingWorkspaceId}
-                onFinishEditing={() => setEditingWorkspaceId(null)}
-                onWorkspaceRename={onWorkspaceRename}
-              />
-            ))}
+          <ul
+            ref={listRef}
+            role="list"
+            style={listStyle}
+            onMouseDown={handleWorkspaceListMouseDown}
+            onAuxClick={handleWorkspaceListAuxClick}
+          >
+            {Array.from(groupedWorkspaces.entries()).map(([projectKey, projectWorkspaces], groupIndex) => {
+              const isCollapsed = collapsedProjects.has(projectKey);
+              const projectName = projects?.[projectKey]?.name || projectKey.slice(0, 8);
+              return (
+              <div key={projectKey} style={groupIndex > 0 ? projectGroupSeparatorStyle : undefined}>
+                {projectKey !== '__ungrouped__' && (
+                  <div
+                    style={projectHeaderStyle}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!isCollapsed}
+                    onClick={() => toggleProjectCollapsed(projectKey)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleProjectCollapsed(projectKey);
+                      }
+                    }}
+                  >
+                    <span style={projectHeaderLeftStyle}>
+                      <span style={chevronStyle}>{isCollapsed ? '\u25B8' : '\u25BE'}</span>
+                      <span className="label">{projectName}</span>
+                    </span>
+                    <button
+                      aria-label={`New workspace in ${projectName}`}
+                      style={projectAddButtonStyle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onWorkspaceCreate(projectKey);
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+                {!isCollapsed && projectWorkspaces.map((ws) => {
+                  const globalIndex = workspaces.indexOf(ws);
+                  return (
+                    <SortableWorkspaceItem
+                      key={ws.id}
+                      ws={ws}
+                      index={globalIndex}
+                      activeWorkspaceId={activeWorkspaceId}
+                      focusedIndex={focusedIndex}
+                      editingWorkspaceId={editingWorkspaceId}
+                      onWorkspaceClick={handleWorkspaceClick}
+                      onWorkspaceClose={onWorkspaceClose}
+                      onStartEditing={setEditingWorkspaceId}
+                      onFinishEditing={() => setEditingWorkspaceId(null)}
+                      onWorkspaceRename={onWorkspaceRename}
+                    />
+                  );
+                })}
+              </div>
+              );
+            })}
           </ul>
         </SortableContext>
       </DndContext>
-      <button
-        aria-label="New Workspace"
-        style={createButtonStyle}
-        onClick={onWorkspaceCreate}
-      >
-        + New Workspace
-      </button>
+      <div style={footerStyle}>
+        <div style={quickActionRowStyle}>
+          <NotificationBadge count={unreadCount} />
+          <button aria-label="My Account" style={secondaryButtonStyle} disabled>
+            <IconUserCircle size={16} />
+          </button>
+          <button aria-label="Preferences" style={secondaryButtonStyle} onClick={onOpenPreferences}>
+            <IconSettings size={16} />
+          </button>
+        </div>
+      </div>
     </nav>
   );
 }
-
-const sidebarHeaderStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '8px 12px',
-  fontSize: '12px',
-  fontWeight: 'bold',
-  color: '#a6adc8',
-  borderBottom: '1px solid #313244',
-};
 
 const navStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   height: '100%',
-  width: '200px',
-  backgroundColor: '#1e1e2e',
-  color: '#cdd6f4',
+  backgroundColor: 'var(--ui-panel-bg-alt)',
+  color: 'var(--ui-text-primary)',
+  overflow: 'hidden',
 };
 
 const listStyle: React.CSSProperties = {
   listStyle: 'none',
   margin: 0,
-  padding: 0,
+  padding: '6px 0',
   flex: 1,
   overflow: 'auto',
 };
 
 const itemStyle: React.CSSProperties = {
-  padding: '4px 8px',
+  padding: '6px 8px',
   cursor: 'pointer',
+  margin: '0 6px 6px',
+  borderStyle: 'solid',
+  borderWidth: 1,
+  borderColor: 'transparent',
+  borderRadius: 'var(--ui-radius)',
+  background: 'rgba(255, 255, 255, 0.01)',
 };
 
 const itemContentStyle: React.CSSProperties = {
@@ -318,10 +469,12 @@ const itemContentStyle: React.CSSProperties = {
 const itemHeaderStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
+  gap: 6,
 };
 
 const activeItemStyle: React.CSSProperties = {
-  backgroundColor: '#313244',
+  borderColor: 'var(--ui-accent)',
+  background: 'color-mix(in srgb, var(--ui-accent) 8%, transparent)',
 };
 
 const nameButtonStyle: React.CSSProperties = {
@@ -331,38 +484,125 @@ const nameButtonStyle: React.CSSProperties = {
   color: 'inherit',
   textAlign: 'left',
   cursor: 'pointer',
-  padding: '4px',
-  font: 'inherit',
+  padding: '4px 0',
+  fontFamily: 'var(--ui-font-mono)',
+  fontSize: 12,
+  letterSpacing: '0.05em',
 };
 
 const renameInputStyle: React.CSSProperties = {
   flex: 1,
-  background: '#313244',
-  border: '1px solid #585b70',
+  background: 'var(--ui-panel-bg)',
+  border: '1px solid var(--ui-border)',
   color: 'inherit',
   textAlign: 'left',
-  padding: '3px',
-  font: 'inherit',
+  padding: '4px 6px',
+  fontFamily: 'var(--ui-font-mono)',
+  fontSize: 12,
+  letterSpacing: '0.05em',
   outline: 'none',
-  borderRadius: '2px',
+  borderRadius: 'var(--ui-radius)',
 };
 
 const closeButtonStyle: React.CSSProperties = {
   background: 'none',
-  border: 'none',
+  border: '1px solid transparent',
   color: 'inherit',
   cursor: 'pointer',
-  padding: '4px 8px',
-  fontSize: '16px',
+  padding: '2px 8px',
+  fontSize: 15,
+  fontFamily: 'var(--ui-font-mono)',
+  borderRadius: 'var(--ui-radius)',
 };
 
-const createButtonStyle: React.CSSProperties = {
+const projectHeaderStyle: React.CSSProperties = {
+  padding: '8px 12px 4px',
+  fontSize: 10,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.1em',
+  color: 'var(--ui-text-muted)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  cursor: 'pointer',
+  userSelect: 'none',
+};
+
+const projectHeaderLeftStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+};
+
+const chevronStyle: React.CSSProperties = {
+  fontSize: 10,
+  lineHeight: 1,
+  width: 10,
+  display: 'inline-block',
+  textAlign: 'center',
+};
+
+const projectGroupSeparatorStyle: React.CSSProperties = {
+  borderTop: '1px solid var(--ui-border)',
+  marginTop: 4,
+  paddingTop: 2,
+};
+
+const projectAddButtonStyle: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  borderTop: '1px solid #313244',
-  color: '#cdd6f4',
-  padding: '12px 8px',
+  color: 'var(--ui-text-muted)',
   cursor: 'pointer',
-  textAlign: 'left',
-  font: 'inherit',
+  padding: '0 4px',
+  fontSize: 14,
+  fontFamily: 'var(--ui-font-mono)',
+  fontWeight: 600,
+  lineHeight: 1,
+  borderRadius: 'var(--ui-radius)',
+};
+
+const branchStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: 'var(--ui-accent)',
+  fontFamily: 'var(--ui-font-mono)',
+  marginTop: 2,
+};
+
+const worktreePathStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: 'var(--ui-text-muted)',
+  fontFamily: 'var(--ui-font-mono)',
+  marginTop: 1,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const footerStyle: React.CSSProperties = {
+  borderTop: '1px solid var(--ui-border)',
+  padding: 10,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+};
+
+const quickActionRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  justifyContent: 'flex-end',
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  padding: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 'var(--ui-radius)',
+  border: '1px solid var(--ui-border)',
+  background: 'var(--ui-panel-bg)',
+  color: 'var(--ui-text-primary)',
+  cursor: 'pointer',
 };

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { safeListen } from '../lib/safe-listen';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import type { Notification, LayoutNode } from '../lib/workspace-types';
@@ -41,7 +41,7 @@ export function useNotificationListener(): void {
     let unlisten: (() => void) | null = null;
 
     const setup = async () => {
-      unlisten = await listen<NotificationRawPayload>('notification-raw', (event) => {
+      unlisten = await safeListen<NotificationRawPayload>('notification-raw', (event) => {
         if (cancelled) return;
 
         const payload = event.payload;

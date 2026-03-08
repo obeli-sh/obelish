@@ -60,38 +60,46 @@ describe('tauriBridge', () => {
       const mockWorkspace = {
         id: 'ws-1',
         name: 'My Workspace',
+        projectId: 'proj-1',
+        worktreePath: '/home',
+        branchName: null,
+        isRootWorktree: false,
         surfaces: [],
         activeSurfaceIndex: 0,
         createdAt: 1000,
       };
       mockInvoke('workspace_create', () => mockWorkspace);
 
-      const result = await tauriBridge.workspace.create({ name: 'My Workspace', cwd: '/home' });
+      const result = await tauriBridge.workspace.create({ projectId: 'proj-1', worktreePath: '/home', name: 'My Workspace' });
 
-      expect(invoke).toHaveBeenCalledWith('workspace_create', { name: 'My Workspace', cwd: '/home' });
+      expect(invoke).toHaveBeenCalledWith('workspace_create', { projectId: 'proj-1', worktreePath: '/home', name: 'My Workspace' });
       expect(result).toEqual(mockWorkspace);
     });
 
-    it('calls invoke with empty object when no args', async () => {
+    it('calls invoke with required args only', async () => {
       const mockWorkspace = {
         id: 'ws-2',
         name: 'default',
+        projectId: 'proj-1',
+        worktreePath: '/home',
+        branchName: null,
+        isRootWorktree: false,
         surfaces: [],
         activeSurfaceIndex: 0,
         createdAt: 2000,
       };
       mockInvoke('workspace_create', () => mockWorkspace);
 
-      const result = await tauriBridge.workspace.create();
+      const result = await tauriBridge.workspace.create({ projectId: 'proj-1', worktreePath: '/home' });
 
-      expect(invoke).toHaveBeenCalledWith('workspace_create', {});
+      expect(invoke).toHaveBeenCalledWith('workspace_create', { projectId: 'proj-1', worktreePath: '/home' });
       expect(result).toEqual(mockWorkspace);
     });
 
     it('propagates errors', async () => {
       mockInvoke('workspace_create', () => Promise.reject(new Error('create failed')));
 
-      await expect(tauriBridge.workspace.create()).rejects.toThrow('create failed');
+      await expect(tauriBridge.workspace.create({ projectId: 'proj-1', worktreePath: '/tmp' })).rejects.toThrow('create failed');
     });
   });
 
@@ -110,6 +118,10 @@ describe('tauriBridge', () => {
       const mockWorkspace = {
         id: 'ws-1',
         name: 'New Name',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
         surfaces: [],
         activeSurfaceIndex: 0,
         createdAt: 1000,
@@ -132,7 +144,7 @@ describe('tauriBridge', () => {
   describe('workspace.list', () => {
     it('calls invoke with workspace_list', async () => {
       const mockList = [
-        { id: 'ws-1', name: 'Workspace 1', surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
+        { id: 'ws-1', name: 'Workspace 1', projectId: '', worktreePath: '', branchName: null, isRootWorktree: false, surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
       ];
       mockInvoke('workspace_list', () => mockList);
 
@@ -194,6 +206,10 @@ describe('tauriBridge', () => {
       const mockResult = {
         id: 'ws-1',
         name: 'Workspace',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
         surfaces: [],
         activeSurfaceIndex: 0,
         createdAt: 1000,
@@ -214,6 +230,69 @@ describe('tauriBridge', () => {
       mockInvoke('pane_open_browser', () => Promise.reject(new Error('open failed')));
 
       await expect(tauriBridge.pane.openBrowser('pane-1', 'https://example.com', 'horizontal')).rejects.toThrow('open failed');
+    });
+  });
+
+  describe('pane.swap', () => {
+    it('calls invoke with pane_swap and args', async () => {
+      const mockResult = {
+        id: 'ws-1',
+        name: 'Workspace',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 1000,
+      };
+      mockInvoke('pane_swap', () => mockResult);
+
+      const result = await tauriBridge.pane.swap('pane-1', 'pane-2');
+
+      expect(invoke).toHaveBeenCalledWith('pane_swap', {
+        paneId: 'pane-1',
+        targetPaneId: 'pane-2',
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('pane_swap', () => Promise.reject(new Error('swap failed')));
+
+      await expect(tauriBridge.pane.swap('pane-1', 'pane-2')).rejects.toThrow('swap failed');
+    });
+  });
+
+  describe('pane.move', () => {
+    it('calls invoke with pane_move and args', async () => {
+      const mockResult = {
+        id: 'ws-1',
+        name: 'Workspace',
+        projectId: '',
+        worktreePath: '',
+        branchName: null,
+        isRootWorktree: false,
+        surfaces: [],
+        activeSurfaceIndex: 0,
+        createdAt: 1000,
+      };
+      mockInvoke('pane_move', () => mockResult);
+
+      const result = await tauriBridge.pane.move('pane-1', 'pane-2', 'left');
+
+      expect(invoke).toHaveBeenCalledWith('pane_move', {
+        paneId: 'pane-1',
+        targetPaneId: 'pane-2',
+        position: 'left',
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('propagates errors', async () => {
+      mockInvoke('pane_move', () => Promise.reject(new Error('move failed')));
+
+      await expect(tauriBridge.pane.move('pane-1', 'pane-2', 'bottom')).rejects.toThrow('move failed');
     });
   });
 
@@ -246,7 +325,7 @@ describe('tauriBridge', () => {
   describe('session.restore', () => {
     it('calls invoke with session_restore and returns workspaces', async () => {
       const mockList = [
-        { id: 'ws-1', name: 'Workspace 1', surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
+        { id: 'ws-1', name: 'Workspace 1', projectId: '', worktreePath: '', branchName: null, isRootWorktree: false, surfaces: [], activeSurfaceIndex: 0, createdAt: 1000 },
       ];
       mockInvoke('session_restore', () => mockList);
 
@@ -419,6 +498,36 @@ describe('tauriBridge', () => {
       mockInvoke('settings_reset', () => Promise.reject(new Error('reset failed')));
 
       await expect(tauriBridge.settings.reset()).rejects.toThrow('reset failed');
+    });
+  });
+
+  describe('project', () => {
+    it('project.list calls project_list', async () => {
+      const result = await tauriBridge.project.list();
+      expect(result).toEqual([]);
+    });
+
+    it('project.add calls project_add', async () => {
+      const result = await tauriBridge.project.add('/home/user/myproject');
+      expect(result).toBeDefined();
+      expect(result.id).toBeDefined();
+    });
+
+    it('project.remove calls project_remove', async () => {
+      await expect(tauriBridge.project.remove('proj-1')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('worktree', () => {
+    it('worktree.list calls worktree_list', async () => {
+      const result = await tauriBridge.worktree.list('proj-1');
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    it('worktree.create calls worktree_create', async () => {
+      const result = await tauriBridge.worktree.create('proj-1', 'feature-branch');
+      expect(result).toBeDefined();
+      expect(result.isMain).toBe(false);
     });
   });
 });

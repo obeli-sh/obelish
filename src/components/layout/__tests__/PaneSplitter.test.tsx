@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import type { LayoutNode } from '../../../lib/workspace-types';
@@ -10,6 +10,23 @@ import { PaneSplitter } from '../PaneSplitter';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
 
 describe('PaneSplitter', () => {
+  function createDataTransfer(): DataTransfer {
+    const store = new Map<string, string>();
+    return {
+      setData: (type: string, value: string) => {
+        store.set(type, value);
+      },
+      getData: (type: string) => store.get(type) ?? '',
+      clearData: () => store.clear(),
+      dropEffect: 'move',
+      effectAllowed: 'all',
+      files: [] as unknown as FileList,
+      items: [] as unknown as DataTransferItemList,
+      types: [],
+      setDragImage: () => {},
+    } as DataTransfer;
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(TerminalPaneModule, 'TerminalPane').mockImplementation(
@@ -301,6 +318,119 @@ describe('PaneSplitter', () => {
 
       await user.click(closeButtons[1]);
       expect(onPaneClose).toHaveBeenCalledWith('pane-2');
+    });
+  });
+
+  describe('pane drag and drop', () => {
+    function mockRect(target: HTMLElement, rect: { left: number; top: number; width: number; height: number }) {
+      vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+          x: rect.left,
+          y: rect.top,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          right: rect.left + rect.width,
+          bottom: rect.top + rect.height,
+          toJSON: () => ({}),
+        } as DOMRect);
+    }
+
+    it('calls onPaneMove with center position when dropped on pane body', () => {
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const source = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const target = screen
+        .getByTestId('terminal-pane-pane-2')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(target, { left: 0, top: 0, width: 100, height: 100 });
+
+      fireEvent.dragStart(source, { dataTransfer });
+      fireEvent.dragOver(target, { dataTransfer, clientX: 50, clientY: 50 });
+      fireEvent.drop(target, { dataTransfer, clientX: 50, clientY: 50 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-2', 'center');
+    });
+
+    it('calls onPaneMove with edge position when dropped near pane edge', () => {
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const source = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const target = screen
+        .getByTestId('terminal-pane-pane-2')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(target, { left: 100, top: 20, width: 200, height: 120 });
+
+      fireEvent.dragStart(source, { dataTransfer });
+      dataTransfer.setData('application/x-obelisk-drop-position', 'left');
+      fireEvent.drop(target, { dataTransfer, clientX: 110, clientY: 80 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-2', 'left');
+    });
+
+    it('does not call onPaneMove when dropped on same pane', () => {
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const pane = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(pane, { left: 0, top: 0, width: 100, height: 100 });
+
+      fireEvent.dragStart(pane, { dataTransfer });
+      fireEvent.dragOver(pane, { dataTransfer, clientX: 10, clientY: 10 });
+      fireEvent.drop(pane, { dataTransfer, clientX: 10, clientY: 10 });
+
+      expect(onPaneMove).not.toHaveBeenCalled();
     });
   });
 });

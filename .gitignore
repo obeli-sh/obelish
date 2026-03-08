@@ -20,6 +20,8 @@ src-tauri/gen/
 
 # Coverage
 coverage/
+playwright-report/
+test-results/
 
 # Environment
 .env

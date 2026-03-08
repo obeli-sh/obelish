@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 // during terminal dispose. Canvas renderer is used instead.
 // import { WebglAddon } from '@xterm/addon-webgl';
 import { SerializeAddon } from '@xterm/addon-serialize';
-import { listen } from '@tauri-apps/api/event';
+import { safeListen } from '../../lib/safe-listen';
 import { tauriBridge } from '../../lib/tauri-bridge';
 
 interface Disposables {
@@ -65,7 +65,7 @@ export function useTerminal(paneId: string, ptyId: string) {
 
       if (disposedRef.current) return;
 
-      const unlisten = await listen<{ data: string }>(`pty-data-${ptyId}`, (event) => {
+      const unlisten = await safeListen<{ data: string }>(`pty-data-${ptyId}`, (event) => {
         if (disposedRef.current) return;
         try {
           const bytes = atob(event.payload.data);

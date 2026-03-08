@@ -24,6 +24,10 @@ function makeWorkspace(id: string, surfaces: SurfaceInfo[]): WorkspaceInfo {
   return {
     id,
     name: `Workspace ${id}`,
+    projectId: '',
+    worktreePath: '',
+    branchName: null,
+    isRootWorktree: false,
     surfaces,
     activeSurfaceIndex: 0,
     createdAt: Date.now(),

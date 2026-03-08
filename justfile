@@ -9,6 +9,10 @@ test:
     cargo test --workspace
     bun test
 
+# Run browser E2E validation tests
+test-e2e:
+    bun run test:e2e
+
 # Run lints
 lint:
     cargo fmt --check

@@ -7,11 +7,22 @@ use crate::workspace::types::{
     LayoutNode, PaneCloseResult, PaneInfo, PaneSplitResult, PaneType, SplitDirection, SurfaceInfo,
     WorkspaceInfo,
 };
+use serde::Deserialize;
 
 pub struct WorkspaceState {
     workspaces: Vec<WorkspaceInfo>,
     active_workspace_id: Option<String>,
     panes: HashMap<String, PaneInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneDropPosition {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    Center,
 }
 
 impl WorkspaceState {
@@ -44,6 +55,10 @@ impl WorkspaceState {
         name: String,
         pane_id: String,
         pty_id: String,
+        project_id: String,
+        worktree_path: String,
+        branch_name: Option<String>,
+        is_root_worktree: bool,
     ) -> WorkspaceInfo {
         let workspace_id = uuid::Uuid::new_v4().to_string();
         let surface_id = uuid::Uuid::new_v4().to_string();
@@ -77,6 +92,10 @@ impl WorkspaceState {
             surfaces: vec![surface],
             active_surface_index: 0,
             created_at: now,
+            project_id,
+            worktree_path,
+            branch_name,
+            is_root_worktree,
         };
 
         self.workspaces.push(workspace.clone());
@@ -119,6 +138,14 @@ impl WorkspaceState {
 
     pub fn get_workspace(&self, id: &str) -> Option<&WorkspaceInfo> {
         self.workspaces.iter().find(|w| w.id == id)
+    }
+
+    pub fn find_workspace_by_pane(&self, pane_id: &str) -> Option<&WorkspaceInfo> {
+        self.workspaces.iter().find(|w| {
+            w.surfaces
+                .iter()
+                .any(|s| layout_contains_pane(&s.layout, pane_id))
+        })
     }
 
     pub fn split_pane(
@@ -320,6 +347,198 @@ impl WorkspaceState {
             workspace: workspace_info,
             closed_workspace_id,
         })
+    }
+
+    pub fn swap_panes(
+        &mut self,
+        pane_id: &str,
+        target_pane_id: &str,
+    ) -> Result<WorkspaceInfo, WorkspaceError> {
+        if pane_id == target_pane_id {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "cannot swap a pane with itself".to_string(),
+            });
+        }
+        if !self.panes.contains_key(pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            });
+        }
+        if !self.panes.contains_key(target_pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            });
+        }
+
+        let source_workspace_idx = self
+            .workspaces
+            .iter()
+            .position(|workspace| {
+                workspace
+                    .surfaces
+                    .iter()
+                    .any(|surface| layout_contains_pane(&surface.layout, pane_id))
+            })
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+        let target_workspace_idx = self
+            .workspaces
+            .iter()
+            .position(|workspace| {
+                workspace
+                    .surfaces
+                    .iter()
+                    .any(|surface| layout_contains_pane(&surface.layout, target_pane_id))
+            })
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            })?;
+        if source_workspace_idx != target_workspace_idx {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "cannot swap panes across workspaces".to_string(),
+            });
+        }
+
+        let source_pty_id = self
+            .panes
+            .get(pane_id)
+            .map(|pane| pane.pty_id.clone())
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+        let target_pty_id = self
+            .panes
+            .get(target_pane_id)
+            .map(|pane| pane.pty_id.clone())
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            })?;
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        for surface in &mut workspace.surfaces {
+            if layout_contains_pane(&surface.layout, pane_id)
+                || layout_contains_pane(&surface.layout, target_pane_id)
+            {
+                swap_layout_panes(
+                    &mut surface.layout,
+                    pane_id,
+                    target_pane_id,
+                    &source_pty_id,
+                    &target_pty_id,
+                );
+            }
+        }
+
+        Ok(workspace.clone())
+    }
+
+    pub fn move_pane(
+        &mut self,
+        pane_id: &str,
+        target_pane_id: &str,
+        position: PaneDropPosition,
+    ) -> Result<WorkspaceInfo, WorkspaceError> {
+        if pane_id == target_pane_id {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "cannot move a pane onto itself".to_string(),
+            });
+        }
+        if !self.panes.contains_key(pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            });
+        }
+        if !self.panes.contains_key(target_pane_id) {
+            return Err(WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            });
+        }
+
+        if matches!(position, PaneDropPosition::Center) {
+            return self.swap_panes(pane_id, target_pane_id);
+        }
+
+        let source_workspace_idx = self
+            .workspaces
+            .iter()
+            .position(|workspace| {
+                workspace
+                    .surfaces
+                    .iter()
+                    .any(|surface| layout_contains_pane(&surface.layout, pane_id))
+            })
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+        let target_workspace_idx = self
+            .workspaces
+            .iter()
+            .position(|workspace| {
+                workspace
+                    .surfaces
+                    .iter()
+                    .any(|surface| layout_contains_pane(&surface.layout, target_pane_id))
+            })
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            })?;
+        if source_workspace_idx != target_workspace_idx {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "cannot move panes across workspaces".to_string(),
+            });
+        }
+
+        let source_pty_id = self
+            .panes
+            .get(pane_id)
+            .map(|pane| pane.pty_id.clone())
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+
+        let workspace = &mut self.workspaces[source_workspace_idx];
+        let source_surface_idx = workspace
+            .surfaces
+            .iter()
+            .position(|surface| layout_contains_pane(&surface.layout, pane_id))
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: pane_id.to_string(),
+            })?;
+        let target_surface_idx = workspace
+            .surfaces
+            .iter()
+            .position(|surface| layout_contains_pane(&surface.layout, target_pane_id))
+            .ok_or_else(|| WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            })?;
+        if source_surface_idx != target_surface_idx {
+            return Err(WorkspaceError::InvalidSplit {
+                reason: "cannot move panes across surfaces".to_string(),
+            });
+        }
+
+        let source_surface = &mut workspace.surfaces[source_surface_idx];
+        let layout_without_source = remove_from_layout(&source_surface.layout, pane_id)
+            .ok_or_else(|| WorkspaceError::InvalidSplit {
+                reason: "cannot remove source pane from layout".to_string(),
+            })?;
+
+        let (new_layout, inserted) = insert_pane_relative_to_target(
+            layout_without_source,
+            target_pane_id,
+            pane_id,
+            &source_pty_id,
+            position,
+        );
+        if !inserted {
+            return Err(WorkspaceError::PaneNotFound {
+                id: target_pane_id.to_string(),
+            });
+        }
+
+        source_surface.layout = new_layout;
+        Ok(workspace.clone())
     }
 
     pub fn get_pane(&self, id: &str) -> Option<&PaneInfo> {
@@ -532,6 +751,140 @@ fn remove_from_layout(layout: &LayoutNode, pane_id: &str) -> Option<LayoutNode> 
     }
 }
 
+fn swap_layout_panes(
+    layout: &mut LayoutNode,
+    pane_id: &str,
+    target_pane_id: &str,
+    source_pty_id: &str,
+    target_pty_id: &str,
+) {
+    match layout {
+        LayoutNode::Leaf {
+            pane_id: id,
+            pty_id,
+        } if id == pane_id => {
+            *id = target_pane_id.to_string();
+            *pty_id = target_pty_id.to_string();
+        }
+        LayoutNode::Leaf {
+            pane_id: id,
+            pty_id,
+        } if id == target_pane_id => {
+            *id = pane_id.to_string();
+            *pty_id = source_pty_id.to_string();
+        }
+        LayoutNode::Split { children, .. } => {
+            swap_layout_panes(
+                &mut children[0],
+                pane_id,
+                target_pane_id,
+                source_pty_id,
+                target_pty_id,
+            );
+            swap_layout_panes(
+                &mut children[1],
+                pane_id,
+                target_pane_id,
+                source_pty_id,
+                target_pty_id,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn insert_pane_relative_to_target(
+    layout: LayoutNode,
+    target_pane_id: &str,
+    source_pane_id: &str,
+    source_pty_id: &str,
+    position: PaneDropPosition,
+) -> (LayoutNode, bool) {
+    match layout {
+        LayoutNode::Leaf { ref pane_id, .. } if pane_id == target_pane_id => (
+            layout_with_inserted_leaf(layout, source_pane_id, source_pty_id, position),
+            true,
+        ),
+        LayoutNode::Split {
+            direction,
+            children,
+            sizes,
+        } => {
+            let [left, right] = *children;
+            let (new_left, inserted_left) = insert_pane_relative_to_target(
+                left,
+                target_pane_id,
+                source_pane_id,
+                source_pty_id,
+                position,
+            );
+            if inserted_left {
+                return (
+                    LayoutNode::Split {
+                        direction,
+                        children: Box::new([new_left, right]),
+                        sizes,
+                    },
+                    true,
+                );
+            }
+
+            let (new_right, inserted_right) = insert_pane_relative_to_target(
+                right,
+                target_pane_id,
+                source_pane_id,
+                source_pty_id,
+                position,
+            );
+            (
+                LayoutNode::Split {
+                    direction,
+                    children: Box::new([new_left, new_right]),
+                    sizes,
+                },
+                inserted_right,
+            )
+        }
+        other => (other, false),
+    }
+}
+
+fn layout_with_inserted_leaf(
+    target_layout: LayoutNode,
+    source_pane_id: &str,
+    source_pty_id: &str,
+    position: PaneDropPosition,
+) -> LayoutNode {
+    let source_layout = LayoutNode::Leaf {
+        pane_id: source_pane_id.to_string(),
+        pty_id: source_pty_id.to_string(),
+    };
+
+    match position {
+        PaneDropPosition::Left => LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            children: Box::new([source_layout, target_layout]),
+            sizes: [0.5, 0.5],
+        },
+        PaneDropPosition::Right => LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            children: Box::new([target_layout, source_layout]),
+            sizes: [0.5, 0.5],
+        },
+        PaneDropPosition::Top => LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            children: Box::new([source_layout, target_layout]),
+            sizes: [0.5, 0.5],
+        },
+        PaneDropPosition::Bottom => LayoutNode::Split {
+            direction: SplitDirection::Vertical,
+            children: Box::new([target_layout, source_layout]),
+            sizes: [0.5, 0.5],
+        },
+        PaneDropPosition::Center => target_layout,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,6 +900,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         assert!(!ws.id.is_empty());
@@ -561,6 +918,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         assert_eq!(ws.surfaces.len(), 1);
@@ -581,6 +942,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let pane = state.get_pane("pane-1").expect("pane should exist");
@@ -590,17 +955,56 @@ mod tests {
     }
 
     #[test]
+    fn find_workspace_by_pane_returns_correct_workspace() {
+        let mut state = new_state();
+        state.create_workspace(
+            "WS1".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            "proj-1".to_string(),
+            "/home/user/project".to_string(),
+            Some("main".to_string()),
+            true,
+        );
+        state.create_workspace(
+            "WS2".to_string(),
+            "pane-2".to_string(),
+            "pty-2".to_string(),
+            "proj-1".to_string(),
+            "/home/user/project-feat".to_string(),
+            Some("feat".to_string()),
+            false,
+        );
+
+        let found = state
+            .find_workspace_by_pane("pane-2")
+            .expect("should find workspace");
+        assert_eq!(found.name, "WS2");
+        assert_eq!(found.worktree_path, "/home/user/project-feat");
+
+        assert!(state.find_workspace_by_pane("nonexistent").is_none());
+    }
+
+    #[test]
     fn close_workspace_removes_from_state() {
         let mut state = new_state();
         let ws1 = state.create_workspace(
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state.close_workspace(&ws1.id).unwrap();
@@ -616,11 +1020,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         // Split a pane to have multiple pty_ids in workspace 1
@@ -646,6 +1058,10 @@ mod tests {
             "Only".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state.close_workspace(&ws.id).unwrap_err();
@@ -659,11 +1075,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let list = state.list_workspaces();
@@ -679,6 +1103,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state
@@ -716,6 +1144,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state
@@ -738,6 +1170,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -752,12 +1188,192 @@ mod tests {
     }
 
     #[test]
+    fn swap_panes_swaps_positions_in_layout() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        let workspace = state.swap_panes("pane-1", "pane-2").unwrap();
+        match &workspace.surfaces[0].layout {
+            LayoutNode::Split { children, .. } => {
+                assert!(
+                    matches!(&children[0], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-2" && pty_id == "pty-2")
+                );
+                assert!(
+                    matches!(&children[1], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-1" && pty_id == "pty-1")
+                );
+            }
+            _ => panic!("expected split layout"),
+        }
+    }
+
+    #[test]
+    fn swap_panes_across_workspaces_returns_error() {
+        let mut state = new_state();
+        state.create_workspace(
+            "First".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        state.create_workspace(
+            "Second".to_string(),
+            "pane-2".to_string(),
+            "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state.swap_panes("pane-1", "pane-2").unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidSplit { .. }));
+    }
+
+    #[test]
+    fn move_pane_to_bottom_relayouts_around_target() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        let workspace = state
+            .move_pane("pane-1", "pane-2", PaneDropPosition::Bottom)
+            .unwrap();
+
+        match &workspace.surfaces[0].layout {
+            LayoutNode::Split {
+                direction,
+                children,
+                ..
+            } => {
+                assert!(matches!(direction, SplitDirection::Vertical));
+                assert!(
+                    matches!(&children[0], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-2" && pty_id == "pty-2")
+                );
+                assert!(
+                    matches!(&children[1], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-1" && pty_id == "pty-1")
+                );
+            }
+            _ => panic!("expected split layout"),
+        }
+    }
+
+    #[test]
+    fn move_pane_to_left_reorders_horizontally() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        state
+            .split_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "pane-2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+
+        let workspace = state
+            .move_pane("pane-2", "pane-1", PaneDropPosition::Left)
+            .unwrap();
+
+        match &workspace.surfaces[0].layout {
+            LayoutNode::Split {
+                direction,
+                children,
+                ..
+            } => {
+                assert!(matches!(direction, SplitDirection::Horizontal));
+                assert!(
+                    matches!(&children[0], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-2" && pty_id == "pty-2")
+                );
+                assert!(
+                    matches!(&children[1], LayoutNode::Leaf { pane_id, pty_id } if pane_id == "pane-1" && pty_id == "pty-1")
+                );
+            }
+            _ => panic!("expected split layout"),
+        }
+    }
+
+    #[test]
+    fn move_pane_across_workspaces_returns_error() {
+        let mut state = new_state();
+        state.create_workspace(
+            "First".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        state.create_workspace(
+            "Second".to_string(),
+            "pane-2".to_string(),
+            "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .move_pane("pane-1", "pane-2", PaneDropPosition::Left)
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidSplit { .. }));
+    }
+
+    #[test]
     fn close_pane_removes_leaf() {
         let mut state = new_state();
         state.create_workspace(
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state
             .split_pane(
@@ -781,6 +1397,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state
             .split_pane(
@@ -807,6 +1427,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state.close_pane("pane-1").unwrap_err();
@@ -822,11 +1446,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state.close_pane("pane-1").unwrap();
@@ -843,11 +1475,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state.close_pane("pane-1").unwrap();
@@ -866,6 +1506,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state
             .split_pane(
@@ -891,6 +1535,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         // Split pane-1 horizontally -> [pane-1, pane-2]
@@ -952,6 +1600,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state
@@ -996,6 +1648,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state
@@ -1019,6 +1675,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state
@@ -1050,6 +1710,10 @@ mod tests {
             "Mixed".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state
@@ -1066,6 +1730,10 @@ mod tests {
             "Other".to_string(),
             "pane-3".to_string(),
             "pty-3".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let pty_ids = state.close_workspace(&ws1.id).unwrap();
@@ -1088,6 +1756,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -1108,6 +1780,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -1128,6 +1804,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -1148,6 +1828,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -1235,6 +1919,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state.close_pane("nonexistent").unwrap_err();
@@ -1248,11 +1936,19 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Other".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state.close_workspace("nonexistent").unwrap_err();
@@ -1315,11 +2011,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         let ws2 = state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         // Active should be ws2 (last created)
@@ -1337,11 +2041,19 @@ mod tests {
             "First".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state.create_workspace(
             "Second".to_string(),
             "pane-2".to_string(),
             "pty-2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state.close_workspace(&ws1.id).unwrap();
@@ -1359,6 +2071,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-old".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         state.update_pane_pty("pane-1", "pty-new".to_string());
@@ -1382,6 +2098,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
         state
             .split_pane(
@@ -1421,8 +2141,24 @@ mod tests {
     #[test]
     fn focus_workspace_sets_active_id() {
         let mut state = WorkspaceState::new();
-        let ws1 = state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
-        let ws2 = state.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+        let ws1 = state.create_workspace(
+            "WS 1".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        let ws2 = state.create_workspace(
+            "WS 2".to_string(),
+            "p2".to_string(),
+            "pty2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         // After creating ws2, active should be ws2
         assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
@@ -1435,7 +2171,15 @@ mod tests {
     #[test]
     fn focus_workspace_nonexistent_returns_not_found() {
         let mut state = WorkspaceState::new();
-        state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+        state.create_workspace(
+            "WS 1".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         let result = state.focus_workspace("nonexistent-id");
         assert!(result.is_err());
@@ -1453,11 +2197,27 @@ mod tests {
         assert_eq!(state.active_workspace_id(), None);
 
         // Create ws1 → active = ws1
-        let ws1 = state.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+        let ws1 = state.create_workspace(
+            "WS 1".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
         assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
 
         // Create ws2 → active = ws2
-        let ws2 = state.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+        let ws2 = state.create_workspace(
+            "WS 2".to_string(),
+            "p2".to_string(),
+            "pty2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
         assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
 
         // Focus ws1 → active = ws1
@@ -1478,6 +2238,10 @@ mod tests {
             "Original".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state
@@ -1495,6 +2259,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state
@@ -1510,6 +2278,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let err = state.rename_workspace(&ws.id, "".to_string()).unwrap_err();
@@ -1529,6 +2301,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state
@@ -1540,9 +2316,33 @@ mod tests {
     #[test]
     fn reorder_workspaces_rearranges_vec() {
         let mut state = new_state();
-        let ws1 = state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
-        let ws2 = state.create_workspace("B".to_string(), "p2".to_string(), "pty2".to_string());
-        let ws3 = state.create_workspace("C".to_string(), "p3".to_string(), "pty3".to_string());
+        let ws1 = state.create_workspace(
+            "A".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        let ws2 = state.create_workspace(
+            "B".to_string(),
+            "p2".to_string(),
+            "pty2".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+        let ws3 = state.create_workspace(
+            "C".to_string(),
+            "p3".to_string(),
+            "pty3".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         state
             .reorder_workspaces(&[ws3.id.clone(), ws1.id.clone(), ws2.id.clone()])
@@ -1557,7 +2357,15 @@ mod tests {
     #[test]
     fn reorder_workspaces_rejects_mismatched_length() {
         let mut state = new_state();
-        let ws1 = state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+        let ws1 = state.create_workspace(
+            "A".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         let result = state.reorder_workspaces(&[ws1.id.clone(), "extra".to_string()]);
         assert!(matches!(
@@ -1569,7 +2377,15 @@ mod tests {
     #[test]
     fn reorder_workspaces_rejects_unknown_id() {
         let mut state = new_state();
-        state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+        state.create_workspace(
+            "A".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         let result = state.reorder_workspaces(&["unknown-id".to_string()]);
         assert!(matches!(
@@ -1581,7 +2397,15 @@ mod tests {
     #[test]
     fn reorder_workspaces_rejects_empty_when_workspaces_exist() {
         let mut state = new_state();
-        state.create_workspace("A".to_string(), "p1".to_string(), "pty1".to_string());
+        state.create_workspace(
+            "A".to_string(),
+            "p1".to_string(),
+            "pty1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
 
         let result = state.reorder_workspaces(&[]);
         assert!(matches!(
@@ -1597,6 +2421,10 @@ mod tests {
             "Test".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
         );
 
         let result = state
@@ -1628,5 +2456,23 @@ mod tests {
             }
             _ => panic!("expected split layout"),
         }
+    }
+
+    #[test]
+    fn create_workspace_stores_project_and_worktree_fields() {
+        let mut state = WorkspaceState::new();
+        let ws = state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            "proj-1".to_string(),
+            "/home/user/myproject".to_string(),
+            Some("main".to_string()),
+            true,
+        );
+        assert_eq!(ws.project_id, "proj-1");
+        assert_eq!(ws.worktree_path, "/home/user/myproject");
+        assert_eq!(ws.branch_name, Some("main".to_string()));
+        assert!(ws.is_root_worktree);
     }
 }

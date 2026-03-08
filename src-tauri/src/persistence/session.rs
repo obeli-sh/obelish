@@ -108,6 +108,10 @@ mod tests {
             "Test Workspace".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(), // project_id
+            String::new(), // worktree_path
+            None,          // branch_name
+            false,         // is_root_worktree
         );
         state
     }
@@ -118,6 +122,10 @@ mod tests {
             "Workspace 1".to_string(),
             "pane-1".to_string(),
             "pty-1".to_string(),
+            String::new(), // project_id
+            String::new(), // worktree_path
+            None,          // branch_name
+            false,         // is_root_worktree
         );
         state
             .split_pane(
@@ -131,6 +139,10 @@ mod tests {
             "Workspace 2".to_string(),
             "pane-3".to_string(),
             "pty-3".to_string(),
+            String::new(), // project_id
+            String::new(), // worktree_path
+            None,          // branch_name
+            false,         // is_root_worktree
         );
         state
     }
@@ -376,5 +388,67 @@ mod tests {
         let restored_session = restored.to_session_state();
 
         assert_eq!(restored_session, session);
+    }
+
+    #[test]
+    fn deserialize_old_session_without_project_fields() {
+        let json = r#"{
+            "workspaces": [{
+                "id": "ws-1",
+                "name": "My Workspace",
+                "surfaces": [{
+                    "id": "surf-1",
+                    "name": "Main",
+                    "layout": {"type": "leaf", "paneId": "pane-1", "ptyId": "pty-1"}
+                }],
+                "activeSurfaceIndex": 0,
+                "createdAt": 1234567890
+            }],
+            "activeWorkspaceId": "ws-1",
+            "panes": {
+                "pane-1": {
+                    "id": "pane-1",
+                    "ptyId": "pty-1",
+                    "paneType": "terminal",
+                    "cwd": null
+                }
+            }
+        }"#;
+
+        let session: SessionState = serde_json::from_str(json).unwrap();
+        assert_eq!(session.workspaces.len(), 1);
+        // New fields should have serde defaults
+        assert_eq!(session.workspaces[0].project_id, "");
+        assert_eq!(session.workspaces[0].worktree_path, "");
+        assert_eq!(session.workspaces[0].branch_name, None);
+        assert!(!session.workspaces[0].is_root_worktree);
+    }
+
+    #[test]
+    fn roundtrip_with_project_and_worktree_fields() {
+        let mut state = WorkspaceState::new();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            "proj-1".to_string(),
+            "/home/user/project".to_string(),
+            Some("main".to_string()),
+            true,
+        );
+        let session = state.to_session_state();
+        let json = serde_json::to_string(&session).unwrap();
+        let deserialized: SessionState = serde_json::from_str(&json).unwrap();
+        assert_eq!(session, deserialized);
+        assert_eq!(deserialized.workspaces[0].project_id, "proj-1");
+        assert_eq!(
+            deserialized.workspaces[0].worktree_path,
+            "/home/user/project"
+        );
+        assert_eq!(
+            deserialized.workspaces[0].branch_name,
+            Some("main".to_string())
+        );
+        assert!(deserialized.workspaces[0].is_root_worktree);
     }
 }

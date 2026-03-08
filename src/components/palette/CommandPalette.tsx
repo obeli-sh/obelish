@@ -23,14 +23,12 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
     if (isOpen) {
       setQuery('');
       setSelectedIndex(0);
-      // Auto-focus on next tick so the input is mounted
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
     }
   }, [isOpen]);
 
-  // Reset selected index when query changes
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
@@ -88,7 +86,7 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.62)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
@@ -101,17 +99,18 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
         aria-label="Command palette"
         aria-modal="true"
         onKeyDown={handleKeyDown}
+        className="panel"
         style={{
           width: '100%',
           maxWidth: 500,
-          backgroundColor: '#181825',
-          border: '1px solid #313244',
-          borderRadius: 8,
+          backgroundColor: 'var(--ui-panel-bg)',
+          border: '1px solid var(--ui-border)',
+          borderRadius: 'var(--ui-radius)',
           overflow: 'hidden',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
         }}
       >
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid #313244' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--ui-border)' }}>
           <input
             ref={inputRef}
             role="searchbox"
@@ -123,11 +122,13 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
             style={{
               width: '100%',
               padding: '8px 12px',
-              backgroundColor: '#1e1e2e',
-              border: '1px solid #313244',
-              borderRadius: 4,
-              color: '#cdd6f4',
-              fontSize: 14,
+              backgroundColor: 'var(--ui-panel-bg-alt)',
+              border: '1px solid var(--ui-border)',
+              borderRadius: 'var(--ui-radius)',
+              color: 'var(--ui-text-primary)',
+              fontFamily: 'var(--ui-font-mono)',
+              fontSize: 12,
+              letterSpacing: '0.06em',
               outline: 'none',
               boxSizing: 'border-box',
             }}
@@ -158,24 +159,26 @@ export function CommandPalette({ isOpen, onClose, commands, onExecute }: Command
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  backgroundColor: isSelected ? '#313244' : 'transparent',
-                  color: '#cdd6f4',
+                  backgroundColor: isSelected ? 'color-mix(in srgb, var(--ui-accent) 12%, transparent)' : 'transparent',
+                  color: 'var(--ui-text-primary)',
+                  borderLeft: isSelected ? '2px solid var(--ui-accent)' : '2px solid transparent',
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 14 }}>{cmd.label}</div>
-                  <div style={{ fontSize: 12, color: '#6c7086' }}>{cmd.description}</div>
+                  <div style={{ fontSize: 12, fontFamily: 'var(--ui-font-mono)' }}>{cmd.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ui-text-muted)' }}>{cmd.description}</div>
                 </div>
                 {binding && (
                   <span
                     style={{
                       fontSize: 12,
                       padding: '2px 6px',
-                      backgroundColor: '#1e1e2e',
-                      border: '1px solid #313244',
-                      borderRadius: 4,
-                      color: '#a6adc8',
+                      backgroundColor: 'var(--ui-panel-bg-alt)',
+                      border: '1px solid var(--ui-border)',
+                      borderRadius: 'var(--ui-radius)',
+                      color: 'var(--ui-text-muted)',
                       whiteSpace: 'nowrap',
+                      fontFamily: 'var(--ui-font-mono)',
                     }}
                   >
                     {bindingToString(binding)}

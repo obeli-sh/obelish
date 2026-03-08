@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { TerminalToolbar, type TerminalToolbarProps } from '../TerminalToolbar';
@@ -43,22 +43,22 @@ describe('TerminalToolbar', () => {
     expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
 
-  it('calls onSplitHorizontal when split-h button is clicked', async () => {
-    const user = userEvent.setup();
-    const onSplitHorizontal = vi.fn();
-    render(<TerminalToolbar {...makeProps({ onSplitHorizontal })} />);
-
-    await user.click(screen.getByRole('button', { name: /split horizontal/i }));
-    expect(onSplitHorizontal).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onSplitVertical when split-v button is clicked', async () => {
+  it('calls onSplitVertical when split-h button is clicked', async () => {
     const user = userEvent.setup();
     const onSplitVertical = vi.fn();
     render(<TerminalToolbar {...makeProps({ onSplitVertical })} />);
 
-    await user.click(screen.getByRole('button', { name: /split vertical/i }));
+    await user.click(screen.getByRole('button', { name: /split horizontal/i }));
     expect(onSplitVertical).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onSplitHorizontal when split-v button is clicked', async () => {
+    const user = userEvent.setup();
+    const onSplitHorizontal = vi.fn();
+    render(<TerminalToolbar {...makeProps({ onSplitHorizontal })} />);
+
+    await user.click(screen.getByRole('button', { name: /split vertical/i }));
+    expect(onSplitHorizontal).toHaveBeenCalledTimes(1);
   });
 
   it('calls onAutoSplit when auto-split button is clicked', async () => {
@@ -85,6 +85,17 @@ describe('TerminalToolbar', () => {
     render(<TerminalToolbar {...makeProps({ onClose })} />);
 
     await user.click(screen.getByRole('button', { name: /close/i }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onClose when middle-clicking toolbar top', () => {
+    const onClose = vi.fn();
+    const { container } = render(<TerminalToolbar {...makeProps({ onClose })} />);
+    const toolbar = container.firstChild as HTMLElement;
+
+    fireEvent.mouseDown(toolbar, { button: 1 });
+    fireEvent(toolbar, new MouseEvent('auxclick', { bubbles: true, button: 1 }));
+
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -136,7 +147,7 @@ describe('TerminalToolbar', () => {
       const input = screen.getByRole('textbox');
       await user.clear(input);
       await user.type(input, 'Blurred Name');
-      await user.tab(); // triggers blur
+      await user.tab();
 
       expect(onRename).toHaveBeenCalledWith('Blurred Name');
     });
@@ -185,12 +196,12 @@ describe('TerminalToolbar', () => {
   it('applies active tab styling when isActive', () => {
     const { container } = render(<TerminalToolbar {...makeProps({ isActive: true })} />);
     const toolbar = container.firstChild as HTMLElement;
-    expect(toolbar.style.backgroundColor).toBe('rgb(30, 30, 46)');
+    expect(toolbar.style.backgroundColor).toBe('var(--ui-panel-bg-alt)');
   });
 
   it('applies inactive tab styling when not active', () => {
     const { container } = render(<TerminalToolbar {...makeProps({ isActive: false })} />);
     const toolbar = container.firstChild as HTMLElement;
-    expect(toolbar.style.backgroundColor).toBe('rgb(24, 24, 37)');
+    expect(toolbar.style.backgroundColor).toBe('var(--ui-panel-bg)');
   });
 });

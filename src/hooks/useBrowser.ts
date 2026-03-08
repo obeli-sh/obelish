@@ -38,6 +38,7 @@ function browserReducer(state: BrowserState, action: BrowserAction): BrowserStat
 }
 
 export function useBrowser(paneId: string, initialUrl: string) {
+  void paneId;
   const [state, dispatch] = useReducer(browserReducer, {
     history: [initialUrl],
     historyIndex: 0,

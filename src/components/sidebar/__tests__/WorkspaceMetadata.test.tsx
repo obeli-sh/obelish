@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { emitMockEvent, clearEventMocks } from '@tauri-apps/api/event';
 import { act } from '@testing-library/react';
@@ -12,7 +12,7 @@ describe('WorkspaceMetadata', () => {
   });
 
   it('shows git branch when available', async () => {
-    const { container } = render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     const gitInfo: GitInfo = {
       branch: 'main',
@@ -29,7 +29,7 @@ describe('WorkspaceMetadata', () => {
   });
 
   it('shows dirty indicator when dirty', async () => {
-    render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     const gitInfo: GitInfo = {
       branch: 'main',
@@ -46,13 +46,13 @@ describe('WorkspaceMetadata', () => {
   });
 
   it('hides git section when no git info', () => {
-    render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     expect(screen.queryByTestId('git-info')).not.toBeInTheDocument();
   });
 
   it('shows listening ports', async () => {
-    render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     const ports: PortInfo[] = [
       { port: 3000, protocol: 'tcp', pid: 1234, processName: 'node' },
@@ -68,13 +68,13 @@ describe('WorkspaceMetadata', () => {
   });
 
   it('hides ports section when empty', () => {
-    render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     expect(screen.queryByTestId('port-info')).not.toBeInTheDocument();
   });
 
   it('shows ahead/behind counts when non-zero', async () => {
-    render(<WorkspaceMetadata paneId="pane-1" />);
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
 
     const gitInfo: GitInfo = {
       branch: 'main',
@@ -89,5 +89,37 @@ describe('WorkspaceMetadata', () => {
 
     expect(await screen.findByText(/↑2/)).toBeInTheDocument();
     expect(screen.getByText(/↓3/)).toBeInTheDocument();
+  });
+
+  it('shows CWD when cwd-changed event fires', async () => {
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
+
+    act(() => {
+      emitMockEvent('cwd-changed-pty-1', { cwd: '/home/user/projects' });
+    });
+
+    expect(await screen.findByTestId('cwd-info')).toHaveTextContent('~/projects');
+  });
+
+  it('shortens home directory in CWD', async () => {
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
+
+    act(() => {
+      emitMockEvent('cwd-changed-pty-1', { cwd: '/home/amaury/projects/obelisk' });
+    });
+
+    expect(await screen.findByTestId('cwd-info')).toHaveTextContent('~/projects/obelisk');
+  });
+
+  it('renders when only CWD is available (no git, no ports)', async () => {
+    render(<WorkspaceMetadata paneId="pane-1" ptyId="pty-1" />);
+
+    act(() => {
+      emitMockEvent('cwd-changed-pty-1', { cwd: '/tmp' });
+    });
+
+    expect(await screen.findByTestId('cwd-info')).toHaveTextContent('/tmp');
+    expect(screen.queryByTestId('git-info')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('port-info')).not.toBeInTheDocument();
   });
 });

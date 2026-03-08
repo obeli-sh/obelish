@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from './useTerminal';
 
 interface TerminalPaneProps {

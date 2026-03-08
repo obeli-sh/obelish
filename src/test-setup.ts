@@ -7,3 +7,6 @@ vi.stubGlobal('ResizeObserver', vi.fn(() => ({
   disconnect: vi.fn(),
   unobserve: vi.fn(),
 })));
+
+// Most unit tests mock Tauri invoke/listen and expect the bridge to use them.
+vi.stubGlobal('__TAURI_INTERNALS__', {});

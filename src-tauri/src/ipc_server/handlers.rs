@@ -71,7 +71,15 @@ fn handle_workspace_create<C: IpcContext>(
         .workspace_state()
         .write()
         .expect("workspace state lock poisoned");
-    let workspace = ws.create_workspace(name, pane_id, pty_id);
+    let workspace = ws.create_workspace(
+        name,
+        pane_id,
+        pty_id,
+        String::new(),
+        String::new(),
+        None,
+        false,
+    );
     drop(ws);
 
     context.session_manager().mark_dirty();
@@ -339,7 +347,15 @@ mod tests {
         // Need at least one workspace to avoid LastWorkspace error
         {
             let mut ws = ctx.workspace_state.write().unwrap();
-            ws.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+            ws.create_workspace(
+                "WS 1".to_string(),
+                "p1".to_string(),
+                "pty1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
         }
 
         let params = serde_json::json!({"id": "nonexistent"});
@@ -360,9 +376,25 @@ mod tests {
         let ws2_id;
         {
             let mut ws = ctx.workspace_state.write().unwrap();
-            let ws1 = ws.create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string());
+            let ws1 = ws.create_workspace(
+                "WS 1".to_string(),
+                "p1".to_string(),
+                "pty1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
             ws1_id = ws1.id;
-            let ws2 = ws.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+            let ws2 = ws.create_workspace(
+                "WS 2".to_string(),
+                "p2".to_string(),
+                "pty2".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
             ws2_id = ws2.id;
         }
 
@@ -446,7 +478,15 @@ mod tests {
         // Create a workspace first
         {
             let mut ws = ctx.workspace_state.write().unwrap();
-            ws.create_workspace("WS".to_string(), "p1".to_string(), "pty1".to_string());
+            ws.create_workspace(
+                "WS".to_string(),
+                "p1".to_string(),
+                "pty1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
         }
 
         let resp = dispatch(METHOD_SESSION_SAVE, None, &ctx, serde_json::json!(10));
@@ -478,9 +518,25 @@ mod tests {
         {
             let mut ws = ctx.workspace_state.write().unwrap();
             ws1_id = ws
-                .create_workspace("WS 1".to_string(), "p1".to_string(), "pty1".to_string())
+                .create_workspace(
+                    "WS 1".to_string(),
+                    "p1".to_string(),
+                    "pty1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
                 .id;
-            ws.create_workspace("WS 2".to_string(), "p2".to_string(), "pty2".to_string());
+            ws.create_workspace(
+                "WS 2".to_string(),
+                "p2".to_string(),
+                "pty2".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
         }
 
         assert!(!ctx.session_manager.is_dirty());

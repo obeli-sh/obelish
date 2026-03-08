@@ -72,20 +72,20 @@ export function KeybindingEditor({ commands, keybindings, onUpdate, onReset }: K
 
   return (
     <div>
-      <h2 style={{ color: '#cdd6f4', margin: '0 0 16px', fontSize: 18 }}>Keyboard Shortcuts</h2>
+      <h2 style={{ color: 'var(--ui-text-primary)', margin: '0 0 16px', fontSize: 18 }}>Keyboard Shortcuts</h2>
       {sortedCategories.map((category) => {
         const cmds = grouped.get(category)!;
         return (
           <div key={category} style={{ marginBottom: 16 }}>
             <div
               style={{
-                color: '#89b4fa',
+                color: 'var(--ui-accent)',
                 fontSize: 12,
                 fontWeight: 600,
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
                 padding: '4px 0',
-                borderBottom: '1px solid #313244',
+                borderBottom: '1px solid var(--ui-border)',
                 marginBottom: 8,
               }}
             >
@@ -108,11 +108,11 @@ export function KeybindingEditor({ commands, keybindings, onUpdate, onReset }: K
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ color: '#cdd6f4', fontSize: 14 }}>{cmd.label}</span>
+                    <span style={{ color: 'var(--ui-text-primary)', fontSize: 14 }}>{cmd.label}</span>
                     {conflictsWith && (
                       <span
                         style={{
-                          color: '#f38ba8',
+                          color: 'var(--ui-danger)',
                           fontSize: 12,
                           marginLeft: 8,
                         }}
@@ -126,10 +126,10 @@ export function KeybindingEditor({ commands, keybindings, onUpdate, onReset }: K
                       onClick={() => setRecordingId(isRecording ? null : cmd.id)}
                       style={{
                         padding: '4px 10px',
-                        backgroundColor: isRecording ? '#89b4fa' : '#1e1e2e',
-                        border: `1px solid ${isRecording ? '#89b4fa' : '#313244'}`,
-                        borderRadius: 4,
-                        color: isRecording ? '#1e1e2e' : '#a6adc8',
+                        backgroundColor: isRecording ? 'var(--ui-accent)' : 'var(--ui-panel-bg)',
+                        border: `1px solid ${isRecording ? 'var(--ui-accent)' : 'var(--ui-border)'}`,
+                        borderRadius: 'var(--ui-radius)',
+                        color: isRecording ? 'var(--ui-panel-bg)' : 'var(--ui-text-muted)',
                         fontSize: 12,
                         cursor: 'pointer',
                         minWidth: 120,
@@ -148,9 +148,9 @@ export function KeybindingEditor({ commands, keybindings, onUpdate, onReset }: K
                       style={{
                         padding: '4px 8px',
                         backgroundColor: 'transparent',
-                        border: '1px solid #313244',
-                        borderRadius: 4,
-                        color: '#6c7086',
+                        border: '1px solid var(--ui-border)',
+                        borderRadius: 'var(--ui-radius)',
+                        color: 'var(--ui-text-muted)',
                         fontSize: 11,
                         cursor: 'pointer',
                       }}

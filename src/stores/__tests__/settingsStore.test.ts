@@ -133,6 +133,23 @@ describe('settingsStore', () => {
     });
   });
 
+  describe('defaultShell', () => {
+    it('has initial defaultShell as empty string', () => {
+      expect(useSettingsStore.getState().defaultShell).toBe('');
+    });
+
+    it('updateDefaultShell sets the value', () => {
+      useSettingsStore.getState().updateDefaultShell('/usr/bin/zsh');
+      expect(useSettingsStore.getState().defaultShell).toBe('/usr/bin/zsh');
+    });
+
+    it('updateDefaultShell can reset to empty string for auto-detect', () => {
+      useSettingsStore.getState().updateDefaultShell('/usr/bin/fish');
+      useSettingsStore.getState().updateDefaultShell('');
+      expect(useSettingsStore.getState().defaultShell).toBe('');
+    });
+  });
+
   describe('_syncSettings', () => {
     it('syncs all data fields from Rust payload', () => {
       const rustPayload: RustSettings = {
@@ -141,6 +158,7 @@ describe('settingsStore', () => {
         terminalFontFamily: 'JetBrains Mono',
         terminalFontSize: 18,
         scrollbackLines: 2000,
+        defaultShell: '/usr/bin/fish',
       };
       useSettingsStore.getState()._syncSettings(rustPayload);
 
@@ -150,6 +168,20 @@ describe('settingsStore', () => {
       expect(state.terminalFontFamily).toBe('JetBrains Mono');
       expect(state.terminalFontSize).toBe(18);
       expect(state.scrollbackLines).toBe(2000);
+      expect(state.defaultShell).toBe('/usr/bin/fish');
+    });
+
+    it('syncs defaultShell from Rust payload', () => {
+      const rustPayload: RustSettings = {
+        keybindings: {},
+        theme: 'dark',
+        terminalFontFamily: 'monospace',
+        terminalFontSize: 14,
+        scrollbackLines: 5000,
+        defaultShell: 'wsl.exe -d Ubuntu-24.04',
+      };
+      useSettingsStore.getState()._syncSettings(rustPayload);
+      expect(useSettingsStore.getState().defaultShell).toBe('wsl.exe -d Ubuntu-24.04');
     });
 
     it('does not remove store action functions', () => {

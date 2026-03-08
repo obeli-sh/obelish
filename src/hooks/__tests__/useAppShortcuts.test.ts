@@ -36,6 +36,7 @@ describe('useAppShortcuts', () => {
       commandPaletteOpen: false,
       settingsOpen: false,
       notificationPanelOpen: false,
+      projectPickerOpen: false,
     });
     useWorkspaceStore.setState({
       workspaces: {},
@@ -49,6 +50,10 @@ describe('useAppShortcuts', () => {
     mockInvoke('pane_split', () => ({
       id: 'ws-1',
       name: 'Workspace 1',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [],
       activeSurfaceIndex: 0,
       createdAt: 0,
@@ -57,6 +62,10 @@ describe('useAppShortcuts', () => {
     mockInvoke('pane_open_browser', () => ({
       id: 'ws-1',
       name: 'Workspace 1',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [],
       activeSurfaceIndex: 0,
       createdAt: 0,
@@ -64,6 +73,10 @@ describe('useAppShortcuts', () => {
     mockInvoke('workspace_create', () => ({
       id: 'ws-new',
       name: 'New Workspace',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [],
       activeSurfaceIndex: 0,
       createdAt: 0,
@@ -104,12 +117,12 @@ describe('useAppShortcuts', () => {
     unmount();
   });
 
-  it('Ctrl+N calls workspace.create', () => {
+  it('Ctrl+N opens the project picker', () => {
     const { unmount } = renderHook(() => useAppShortcuts());
 
     fireKeydown('n', { ctrlKey: true });
 
-    expect(invoke).toHaveBeenCalledWith('workspace_create', {});
+    expect(useUiStore.getState().projectPickerOpen).toBe(true);
     unmount();
   });
 
@@ -117,6 +130,10 @@ describe('useAppShortcuts', () => {
     const ws1: WorkspaceInfo = {
       id: 'ws-1',
       name: 'Workspace 1',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [],
       activeSurfaceIndex: 0,
       createdAt: 1,
@@ -124,6 +141,10 @@ describe('useAppShortcuts', () => {
     const ws2: WorkspaceInfo = {
       id: 'ws-2',
       name: 'Workspace 2',
+      projectId: '',
+      worktreePath: '',
+      branchName: null,
+      isRootWorktree: false,
       surfaces: [],
       activeSurfaceIndex: 0,
       createdAt: 2,

@@ -52,13 +52,14 @@ export function SettingsModal({ isOpen, onClose, children }: SettingsModalProps)
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
+        className="panel"
         style={{
           width: '100%',
-          maxWidth: 700,
+          maxWidth: 960,
           maxHeight: '80vh',
-          backgroundColor: '#181825',
-          border: '1px solid #313244',
-          borderRadius: 8,
+          backgroundColor: 'var(--ui-panel-bg)',
+          border: '1px solid var(--ui-border)',
+          borderRadius: 'var(--ui-radius)',
           overflow: 'auto',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
           padding: 24,

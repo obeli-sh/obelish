@@ -16,10 +16,42 @@ enum State {
 
 const MAX_PAYLOAD_SIZE: usize = 64 * 1024; // 64KB
 
+fn percent_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(h), Some(l)) = (hi, lo) {
+                if let (Some(hv), Some(lv)) = (hex_val(h), hex_val(l)) {
+                    result.push((hv << 4 | lv) as char);
+                    continue;
+                }
+            }
+            // Invalid percent encoding, pass through literally
+            result.push('%');
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 pub struct OscParser {
     state: State,
     osc_code: String,
     payload: String,
+    last_cwd: Option<String>,
 }
 
 impl Default for OscParser {
@@ -34,10 +66,11 @@ impl OscParser {
             state: State::Normal,
             osc_code: String::new(),
             payload: String::new(),
+            last_cwd: None,
         }
     }
 
-    pub fn feed(&mut self, bytes: &[u8]) -> (Vec<u8>, Vec<OscNotification>) {
+    pub fn feed(&mut self, bytes: &[u8]) -> (Vec<u8>, Vec<OscNotification>, Option<String>) {
         let mut forwarded = Vec::with_capacity(bytes.len());
         let mut notifications = Vec::new();
 
@@ -103,7 +136,8 @@ impl OscParser {
             }
         }
 
-        (forwarded, notifications)
+        let cwd = self.last_cwd.take();
+        (forwarded, notifications, cwd)
     }
 
     fn emit_notification(&mut self, notifications: &mut Vec<OscNotification>) {
@@ -113,6 +147,23 @@ impl OscParser {
         };
 
         match code {
+            7 => {
+                // OSC 7: Current working directory
+                // Format: file://hostname/path or file:///path
+                let payload = &self.payload;
+                if let Some(rest) = payload.strip_prefix("file://") {
+                    // Skip hostname (everything up to the next '/')
+                    let path = match rest.find('/') {
+                        Some(pos) => &rest[pos..],
+                        None => return, // No path component
+                    };
+                    if !path.is_empty() {
+                        // Percent-decode the path
+                        let decoded = percent_decode(path);
+                        self.last_cwd = Some(decoded);
+                    }
+                }
+            }
             9 => {
                 notifications.push(OscNotification {
                     osc_type: 9,
@@ -167,16 +218,17 @@ mod tests {
     #[test]
     fn empty_input() {
         let mut parser = OscParser::new();
-        let (forwarded, notifications) = parser.feed(b"");
+        let (forwarded, notifications, cwd) = parser.feed(b"");
         assert_eq!(forwarded.len(), 0);
         assert!(notifications.is_empty());
+        assert!(cwd.is_none());
     }
 
     #[test]
     fn normal_text_forwarded_unchanged() {
         let mut parser = OscParser::new();
         let input = b"Hello, world!";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(&forwarded, input);
         assert!(notifications.is_empty());
@@ -187,7 +239,7 @@ mod tests {
         let mut parser = OscParser::new();
         // ESC ] 9 ; message BEL
         let input = b"\x1b]9;Hello from terminal\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 9);
@@ -200,7 +252,7 @@ mod tests {
         let mut parser = OscParser::new();
         // ESC ] 9 ; message ESC \
         let input = b"\x1b]9;Hello from terminal\x1b\\";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 9);
@@ -212,7 +264,7 @@ mod tests {
     fn osc9_empty_body() {
         let mut parser = OscParser::new();
         let input = b"\x1b]9;\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 9);
@@ -225,7 +277,7 @@ mod tests {
         let mut parser = OscParser::new();
         // OSC 99: ESC]99;i=123;Hello kitty BEL
         let input = b"\x1b]99;i=123;Hello kitty\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 99);
@@ -238,7 +290,7 @@ mod tests {
         let mut parser = OscParser::new();
         // OSC 99 without id parameter
         let input = b"\x1b]99;Just a message\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 99);
@@ -251,7 +303,7 @@ mod tests {
         let mut parser = OscParser::new();
         // OSC 777: ESC]777;notify;Title;Body text BEL
         let input = b"\x1b]777;notify;My Title;My Body\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 777);
@@ -263,7 +315,7 @@ mod tests {
     fn osc777_title_only() {
         let mut parser = OscParser::new();
         let input = b"\x1b]777;notify;My Title\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].osc_type, 777);
@@ -276,7 +328,7 @@ mod tests {
         let mut parser = OscParser::new();
         // OSC 52 (clipboard) - not a notification code
         let input = b"\x1b]52;c;SGVsbG8=\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert!(notifications.is_empty());
     }
@@ -288,8 +340,8 @@ mod tests {
         // Split at various points and verify same result
         for split_point in 1..full_input.len() {
             let mut parser = OscParser::new();
-            let (fwd1, notifs1) = parser.feed(&full_input[..split_point]);
-            let (fwd2, notifs2) = parser.feed(&full_input[split_point..]);
+            let (fwd1, notifs1, _) = parser.feed(&full_input[..split_point]);
+            let (fwd2, notifs2, _) = parser.feed(&full_input[split_point..]);
 
             let total_forwarded = fwd1.len() + fwd2.len();
             assert_eq!(total_forwarded, full_input.len(), "split at {split_point}");
@@ -306,7 +358,7 @@ mod tests {
     fn multiple_notifications_single_read() {
         let mut parser = OscParser::new();
         let input = b"\x1b]9;First\x07\x1b]9;Second\x07";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 2);
         assert_eq!(notifications[0].title, "First");
@@ -317,7 +369,7 @@ mod tests {
     fn interleaved_text_and_osc() {
         let mut parser = OscParser::new();
         let input = b"hello\x1b]9;msg\x07world";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].title, "msg");
@@ -330,7 +382,7 @@ mod tests {
         let mut parser = OscParser::new();
         // ANSI color escape: ESC [ 3 2 m
         let input = b"\x1b[32m";
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(&forwarded, input.as_slice());
         assert!(notifications.is_empty());
@@ -342,7 +394,7 @@ mod tests {
         let payload = "x".repeat(10 * 1024); // 10KB
         let input_str = format!("\x1b]9;{}\x07", payload);
         let input = input_str.as_bytes();
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].title, payload);
@@ -367,7 +419,7 @@ mod tests {
 
         for input in test_inputs {
             let mut parser = OscParser::new();
-            let (forwarded, _) = parser.feed(input);
+            let (forwarded, _, _) = parser.feed(input);
             assert_eq!(
                 forwarded.len(),
                 input.len(),
@@ -387,7 +439,7 @@ mod tests {
             .cycle()
             .take(single.len() * 100)
             .collect();
-        let (forwarded, notifications) = parser.feed(&input);
+        let (forwarded, notifications, _) = parser.feed(&input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 100);
     }
@@ -396,7 +448,7 @@ mod tests {
     fn binary_data_in_normal_mode() {
         let mut parser = OscParser::new();
         let input: Vec<u8> = (0..=255).collect();
-        let (forwarded, _) = parser.feed(&input);
+        let (forwarded, _, _) = parser.feed(&input);
         assert_eq!(forwarded.len(), input.len());
     }
 
@@ -407,7 +459,7 @@ mod tests {
         let payload = "x".repeat(MAX_PAYLOAD_SIZE + 100);
         let input_str = format!("\x1b]9;{}\x07", payload);
         let input = input_str.as_bytes();
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         // Sequence should be aborted, no notification extracted
         assert!(notifications.is_empty());
@@ -420,7 +472,7 @@ mod tests {
         let payload = "x".repeat(MAX_PAYLOAD_SIZE - 1);
         let input_str = format!("\x1b]9;{}\x07", payload);
         let input = input_str.as_bytes();
-        let (forwarded, notifications) = parser.feed(input);
+        let (forwarded, notifications, _) = parser.feed(input);
         assert_eq!(forwarded.len(), input.len());
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].title.len(), MAX_PAYLOAD_SIZE - 1);
@@ -430,19 +482,103 @@ mod tests {
     fn reset_after_complete_sequence() {
         let mut parser = OscParser::new();
         // First sequence
-        let (fwd1, notifs1) = parser.feed(b"\x1b]9;First\x07");
+        let (fwd1, notifs1, _) = parser.feed(b"\x1b]9;First\x07");
         assert_eq!(notifs1.len(), 1);
         assert_eq!(fwd1.len(), b"\x1b]9;First\x07".len());
 
         // Normal text after sequence
-        let (fwd2, notifs2) = parser.feed(b"normal text");
+        let (fwd2, notifs2, _) = parser.feed(b"normal text");
         assert_eq!(&fwd2, b"normal text");
         assert!(notifs2.is_empty());
 
         // Second sequence
-        let (fwd3, notifs3) = parser.feed(b"\x1b]9;Second\x07");
+        let (fwd3, notifs3, _) = parser.feed(b"\x1b]9;Second\x07");
         assert_eq!(notifs3.len(), 1);
         assert_eq!(notifs3[0].title, "Second");
         assert_eq!(fwd3.len(), b"\x1b]9;Second\x07".len());
+    }
+
+    // --- OSC 7 (CWD) tests ---
+
+    #[test]
+    fn osc7_basic_path() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file://localhost/home/user/projects\x07";
+        let (forwarded, notifications, cwd) = parser.feed(input);
+        assert_eq!(forwarded.len(), input.len());
+        assert!(notifications.is_empty());
+        assert_eq!(cwd, Some("/home/user/projects".to_string()));
+    }
+
+    #[test]
+    fn osc7_empty_hostname() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file:///home/user\x07";
+        let (_, _, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/home/user".to_string()));
+    }
+
+    #[test]
+    fn osc7_st_terminator() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file://host/tmp/dir\x1b\\";
+        let (_, _, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/tmp/dir".to_string()));
+    }
+
+    #[test]
+    fn osc7_percent_encoded_spaces() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file://localhost/home/user/my%20project\x07";
+        let (_, _, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/home/user/my project".to_string()));
+    }
+
+    #[test]
+    fn osc7_no_file_prefix_ignored() {
+        let mut parser = OscParser::new();
+        // No file:// prefix — should not set CWD
+        let input = b"\x1b]7;/home/user\x07";
+        let (_, _, cwd) = parser.feed(input);
+        assert!(cwd.is_none());
+    }
+
+    #[test]
+    fn osc7_only_latest_cwd_returned() {
+        let mut parser = OscParser::new();
+        // Two OSC 7 in the same chunk — last one wins
+        let input = b"\x1b]7;file:///first\x07\x1b]7;file:///second\x07";
+        let (_, _, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/second".to_string()));
+    }
+
+    #[test]
+    fn osc7_cwd_cleared_after_feed() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file:///home/user\x07";
+        let (_, _, cwd1) = parser.feed(input);
+        assert_eq!(cwd1, Some("/home/user".to_string()));
+
+        // Next feed with no OSC 7 should return None
+        let (_, _, cwd2) = parser.feed(b"hello");
+        assert!(cwd2.is_none());
+    }
+
+    #[test]
+    fn osc7_mixed_with_notification() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file:///home/user\x07\x1b]9;Build done\x07";
+        let (_, notifications, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/home/user".to_string()));
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].title, "Build done");
+    }
+
+    #[test]
+    fn osc7_root_path() {
+        let mut parser = OscParser::new();
+        let input = b"\x1b]7;file://localhost/\x07";
+        let (_, _, cwd) = parser.feed(input);
+        assert_eq!(cwd, Some("/".to_string()));
     }
 }

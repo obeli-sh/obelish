@@ -12,12 +12,45 @@ function buildDefaultKeybindings(): Record<string, KeyBinding> {
   return bindings;
 }
 
+export interface ThemeColors {
+  appBackground: string;
+  panelBackground: string;
+  panelBackgroundAlt: string;
+  textPrimary: string;
+  textMuted: string;
+  borderColor: string;
+  accentColor: string;
+  dangerColor: string;
+  terminalBackground: string;
+  terminalForeground: string;
+  terminalCursor: string;
+  terminalSelection: string;
+}
+
+export const defaultThemeColors: ThemeColors = {
+  appBackground: '#181825',
+  panelBackground: '#1e1e2e',
+  panelBackgroundAlt: '#181825',
+  textPrimary: '#cdd6f4',
+  textMuted: '#a6adc8',
+  borderColor: '#313244',
+  accentColor: '#89b4fa',
+  dangerColor: '#f38ba8',
+  terminalBackground: '#0b0b0b',
+  terminalForeground: '#cdd6f4',
+  terminalCursor: '#f5e0dc',
+  terminalSelection: '#45475a80',
+};
+
+export type WorkspaceLayoutPreset = 'single' | 'side-by-side' | 'stacked';
+
 export interface RustSettings {
   keybindings: Record<string, KeyBinding>;
   theme: string;
   terminalFontFamily: string;
   terminalFontSize: number;
   scrollbackLines: number;
+  defaultShell?: string;
 }
 
 interface SettingsStoreState {
@@ -26,12 +59,24 @@ interface SettingsStoreState {
   terminalFontFamily: string;
   terminalFontSize: number;
   scrollbackLines: number;
+  defaultShell: string;
+  preferredWorkspaceLayout: WorkspaceLayoutPreset;
+  showAllProjects: boolean;
+  uiFontFamily: string;
+  uiFontSize: number;
+  themeColors: ThemeColors;
   updateKeybinding: (commandId: string, binding: KeyBinding) => void;
   resetKeybinding: (commandId: string) => void;
   resetAllKeybindings: () => void;
   updateTheme: (theme: 'dark' | 'light' | 'system') => void;
   updateFontFamily: (fontFamily: string) => void;
   updateFontSize: (fontSize: number) => void;
+  updateDefaultShell: (shell: string) => void;
+  updatePreferredWorkspaceLayout: (layout: WorkspaceLayoutPreset) => void;
+  updateShowAllProjects: (show: boolean) => void;
+  updateUiFontFamily: (fontFamily: string) => void;
+  updateUiFontSize: (size: number) => void;
+  updateThemeColor: (key: keyof ThemeColors, value: string) => void;
   _syncSettings: (settings: RustSettings) => void;
 }
 
@@ -41,6 +86,12 @@ export const useSettingsStore = create<SettingsStoreState>((set) => ({
   terminalFontFamily: '"Fira Mono", monospace',
   terminalFontSize: 14,
   scrollbackLines: 5000,
+  defaultShell: '',
+  preferredWorkspaceLayout: 'single',
+  showAllProjects: false,
+  uiFontFamily: "'Fira Mono', monospace",
+  uiFontSize: 13,
+  themeColors: { ...defaultThemeColors },
 
   updateKeybinding: (commandId, binding) => {
     set((state) => ({
@@ -74,6 +125,32 @@ export const useSettingsStore = create<SettingsStoreState>((set) => ({
     set({ terminalFontSize });
   },
 
+  updateDefaultShell: (defaultShell) => {
+    set({ defaultShell });
+  },
+
+  updatePreferredWorkspaceLayout: (preferredWorkspaceLayout) => {
+    set({ preferredWorkspaceLayout });
+  },
+
+  updateShowAllProjects: (showAllProjects) => {
+    set({ showAllProjects });
+  },
+
+  updateUiFontFamily: (uiFontFamily) => {
+    set({ uiFontFamily });
+  },
+
+  updateUiFontSize: (uiFontSize) => {
+    set({ uiFontSize });
+  },
+
+  updateThemeColor: (key, value) => {
+    set((state) => ({
+      themeColors: { ...state.themeColors, [key]: value },
+    }));
+  },
+
   _syncSettings: (settings) => {
     set({
       keybindings: settings.keybindings,
@@ -81,6 +158,7 @@ export const useSettingsStore = create<SettingsStoreState>((set) => ({
       terminalFontFamily: settings.terminalFontFamily,
       terminalFontSize: settings.terminalFontSize,
       scrollbackLines: settings.scrollbackLines,
+      defaultShell: settings.defaultShell ?? '',
     });
   },
 }));

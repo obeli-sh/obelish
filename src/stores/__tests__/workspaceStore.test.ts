@@ -15,6 +15,10 @@ function makeWorkspace(id: string, surfaces: SurfaceInfo[], activeSurfaceIndex =
   return {
     id,
     name: `Workspace ${id}`,
+    projectId: '',
+    worktreePath: '',
+    branchName: null,
+    isRootWorktree: false,
     surfaces,
     activeSurfaceIndex,
     createdAt: Date.now(),
@@ -176,6 +180,20 @@ describe('workspaceStore', () => {
       expect(useWorkspaceStore.getState().browserPaneUrls).toEqual({
         'pane-1': 'https://example.com',
         'pane-2': 'https://other.com',
+      });
+    });
+
+    it('_removeBrowserPaneUrl removes pane url entry', () => {
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://example.com');
+      useWorkspaceStore.getState()._removeBrowserPaneUrl('pane-1');
+      expect(useWorkspaceStore.getState().browserPaneUrls['pane-1']).toBeUndefined();
+    });
+
+    it('_removeBrowserPaneUrl is a no-op for unknown pane', () => {
+      useWorkspaceStore.getState()._setBrowserPaneUrl('pane-1', 'https://example.com');
+      useWorkspaceStore.getState()._removeBrowserPaneUrl('pane-2');
+      expect(useWorkspaceStore.getState().browserPaneUrls).toEqual({
+        'pane-1': 'https://example.com',
       });
     });
   });

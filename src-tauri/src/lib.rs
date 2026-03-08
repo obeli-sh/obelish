@@ -5,6 +5,7 @@ pub mod ipc_server;
 pub mod metadata;
 pub mod notifications;
 pub mod persistence;
+pub mod project;
 pub mod pty;
 pub mod scrollback;
 pub mod settings;
@@ -30,6 +31,7 @@ fn compute_socket_path() -> std::path::PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -54,11 +56,21 @@ pub fn run() {
             #[cfg(not(unix))]
             let socket_path: Option<std::path::PathBuf> = None;
 
+            let project_backend = Arc::new(
+                FsPersistence::new(app_data_dir.join("projects"))
+                    .expect("failed to create project persistence backend"),
+            );
+            let mut project_store = project::ProjectStore::new(project_backend);
+            if let Err(e) = project_store.load() {
+                tracing::warn!("Failed to load projects: {e}");
+            }
+
             let app_state = AppState::new(
                 session_manager,
                 scrollback_storage,
                 settings_manager,
                 socket_path.clone(),
+                project_store,
             );
             app.manage(app_state);
 
@@ -124,6 +136,8 @@ pub fn run() {
             commands::workspace_reorder,
             commands::pane_split,
             commands::pane_open_browser,
+            commands::pane_swap,
+            commands::pane_move,
             commands::pane_close,
             commands::session_save,
             commands::session_restore,
@@ -135,6 +149,13 @@ pub fn run() {
             commands::settings_get,
             commands::settings_update,
             commands::settings_reset,
+            commands::shell_list,
+            commands::project_list,
+            commands::project_add,
+            commands::project_remove,
+            commands::worktree_list,
+            commands::worktree_create,
+            commands::list_directories,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

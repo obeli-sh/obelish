@@ -85,6 +85,12 @@ fn apply_dotted_key(
                     reason: format!("invalid value for scrollbackLines: {e}"),
                 })?;
         }
+        "defaultShell" => {
+            settings.default_shell =
+                serde_json::from_value(value).map_err(|e| PersistenceError::Corrupted {
+                    reason: format!("invalid value for defaultShell: {e}"),
+                })?;
+        }
         _ if key.starts_with("keybindings.") => {
             let binding_name = &key["keybindings.".len()..];
             let kb = serde_json::from_value(value).map_err(|e| PersistenceError::Corrupted {

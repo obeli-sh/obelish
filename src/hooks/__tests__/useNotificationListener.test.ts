@@ -18,6 +18,10 @@ describe('useNotificationListener', () => {
         'ws-1': {
           id: 'ws-1',
           name: 'Workspace 1',
+          projectId: '',
+          worktreePath: '',
+          branchName: null,
+          isRootWorktree: false,
           surfaces: [{
             id: 's-1',
             name: 'Surface 1',

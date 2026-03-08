@@ -54,18 +54,18 @@ describe('PaneWrapper', () => {
     expect(terminal).toHaveAttribute('data-active', 'false');
   });
 
-  it('shows active border when isActive is true', () => {
+  it('shows accent border when isActive is true', () => {
     const { container } = render(<PaneWrapper {...defaultProps} isActive={true} />);
 
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.style.borderColor).toBe('rgb(59, 130, 246)');
+    expect(wrapper.style.borderColor).toBe('var(--ui-accent)');
   });
 
-  it('shows no border when isActive is false', () => {
+  it('keeps neutral border when isActive is false', () => {
     const { container } = render(<PaneWrapper {...defaultProps} isActive={false} />);
 
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.style.borderColor).toBe('transparent');
+    expect(wrapper.style.borderColor).toBe('var(--ui-border)');
   });
 
   it('calls onClick on click', async () => {
@@ -88,22 +88,22 @@ describe('PaneWrapper', () => {
     expect(PaneWrapper).toHaveProperty('$$typeof', Symbol.for('react.memo'));
   });
 
-  it('shows_blue_ring_when_notification', () => {
+  it('shows notification border when hasNotification is true', () => {
     const { container } = render(
       <PaneWrapper {...defaultProps} hasNotification={true} />,
     );
 
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.style.borderColor).toBe('rgb(96, 165, 250)');
+    expect(wrapper.style.borderColor).toBe('color-mix(in srgb, var(--ui-accent) 40%, var(--ui-border))');
   });
 
-  it('no_ring_when_no_notification', () => {
+  it('shows neutral border when no notification', () => {
     const { container } = render(
       <PaneWrapper {...defaultProps} hasNotification={false} />,
     );
 
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.style.borderColor).toBe('transparent');
+    expect(wrapper.style.borderColor).toBe('var(--ui-border)');
   });
 
   describe('TerminalToolbar integration', () => {

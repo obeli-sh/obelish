@@ -93,36 +93,39 @@ const toolbarStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: '4px',
   padding: '4px 8px',
-  backgroundColor: '#181825',
-  borderBottom: '1px solid #313244',
+  backgroundColor: 'var(--ui-panel-bg)',
+  borderBottom: '1px solid var(--ui-border)',
 };
 
 const buttonStyle: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  color: '#cdd6f4',
+  background: 'transparent',
+  border: '1px solid var(--ui-border)',
+  borderRadius: 'var(--ui-radius)',
+  color: 'var(--ui-text-primary)',
   cursor: 'pointer',
-  padding: '4px 8px',
-  fontSize: '14px',
-  borderRadius: '4px',
+  padding: '3px 8px',
+  fontSize: 12,
+  fontFamily: 'var(--ui-font-mono)',
 };
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
   padding: '4px 8px',
-  backgroundColor: '#1e1e2e',
-  border: '1px solid #313244',
-  borderRadius: '4px',
-  color: '#cdd6f4',
-  fontSize: '13px',
+  backgroundColor: 'var(--ui-panel-bg-alt)',
+  border: '1px solid var(--ui-border)',
+  borderRadius: 'var(--ui-radius)',
+  color: 'var(--ui-text-primary)',
+  fontSize: 12,
+  fontFamily: 'var(--ui-font-mono)',
+  letterSpacing: '0.04em',
   outline: 'none',
 };
 
 const loadingStyle: React.CSSProperties = {
   width: '16px',
   height: '16px',
-  border: '2px solid #313244',
-  borderTop: '2px solid #89b4fa',
+  border: '2px solid var(--ui-border)',
+  borderTop: '2px solid var(--ui-accent)',
   borderRadius: '50%',
   animation: 'spin 1s linear infinite',
 };

@@ -19,6 +19,10 @@ export default defineConfig({
         __dirname,
         "src/__mocks__/@tauri-apps/api/event.ts",
       ),
+      "@xterm/xterm/css/xterm.css": path.resolve(
+        __dirname,
+        "src/__mocks__/xterm.css",
+      ),
       "@xterm/xterm": path.resolve(
         __dirname,
         "src/__mocks__/@xterm/xterm.ts",
@@ -34,6 +38,10 @@ export default defineConfig({
       "@xterm/addon-serialize": path.resolve(
         __dirname,
         "src/__mocks__/@xterm/addon-serialize.ts",
+      ),
+      "@tauri-apps/plugin-dialog": path.resolve(
+        __dirname,
+        "src/__mocks__/@tauri-apps/plugin-dialog/index.ts",
       ),
       "react-resizable-panels": path.resolve(
         __dirname,

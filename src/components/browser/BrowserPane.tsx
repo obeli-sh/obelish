@@ -11,7 +11,7 @@ export function BrowserPane({ paneId, url, isActive }: BrowserPaneProps) {
   const browser = useBrowser(paneId, url);
 
   return (
-    <div style={containerStyle}>
+    <div data-active={isActive} style={containerStyle}>
       <BrowserToolbar
         url={browser.currentUrl}
         canGoBack={browser.canGoBack}

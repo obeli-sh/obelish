@@ -75,7 +75,9 @@ export function TerminalToolbar({
     setEditValue(name);
   };
 
-  const toolbarBg = isActive ? '#1e1e2e' : '#181825';
+  const toolbarBg = isActive
+    ? 'var(--ui-panel-bg-alt)'
+    : 'var(--ui-panel-bg)';
 
   const actionButton = (
     label: string,
@@ -93,7 +95,8 @@ export function TerminalToolbar({
       onMouseLeave={() => setHoveredButton(null)}
       style={{
         ...iconButtonStyle,
-        backgroundColor: hoveredButton === id ? '#313244' : 'transparent',
+        backgroundColor: hoveredButton === id ? 'color-mix(in srgb, var(--ui-accent) 12%, transparent)' : 'transparent',
+        borderColor: hoveredButton === id ? 'var(--ui-accent)' : 'transparent',
       }}
     >
       {icon}
@@ -105,13 +108,23 @@ export function TerminalToolbar({
       style={{
         ...toolbarStyle,
         backgroundColor: toolbarBg,
-        borderTopLeftRadius: isActive ? 6 : 0,
-        borderTopRightRadius: isActive ? 6 : 0,
+        borderLeft: isActive ? '2px solid var(--ui-accent)' : '2px solid transparent',
       }}
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onAuxClick={(e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }}
     >
       <div style={leftStyle}>
-        <IconTerminal2 size={14} color="#cdd6f4" data-testid="icon-terminal" />
+        <IconTerminal2 size={14} color="var(--ui-text-primary)" data-testid="icon-terminal" />
         {editing ? (
           <input
             ref={inputRef}
@@ -134,11 +147,11 @@ export function TerminalToolbar({
         )}
       </div>
       <div style={actionsStyle}>
-        {actionButton('Split horizontal', 'split-h', onSplitHorizontal, <IconLayoutRows size={14} color="#cdd6f4" />)}
-        {actionButton('Split vertical', 'split-v', onSplitVertical, <IconLayoutColumns size={14} color="#cdd6f4" />)}
-        {actionButton('Auto split', 'auto', onAutoSplit, <IconArrowsSplit size={14} color="#cdd6f4" />)}
-        {actionButton('Open browser', 'browser', onOpenBrowser, <IconBrowser size={14} color="#cdd6f4" />)}
-        {actionButton('Close', 'close', onClose, <IconX size={14} color="#cdd6f4" />)}
+        {actionButton('Split horizontal', 'split-h', onSplitVertical, <IconLayoutRows size={14} color="var(--ui-text-primary)" />)}
+        {actionButton('Split vertical', 'split-v', onSplitHorizontal, <IconLayoutColumns size={14} color="var(--ui-text-primary)" />)}
+        {actionButton('Auto split', 'auto', onAutoSplit, <IconArrowsSplit size={14} color="var(--ui-text-primary)" />)}
+        {actionButton('Open browser', 'browser', onOpenBrowser, <IconBrowser size={14} color="var(--ui-text-primary)" />)}
+        {actionButton('Close', 'close', onClose, <IconX size={14} color="var(--ui-text-primary)" />)}
       </div>
     </div>
   );
@@ -148,11 +161,11 @@ const toolbarStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  height: 32,
-  minHeight: 32,
-  maxHeight: 32,
-  padding: '0 8px',
-  borderBottom: '1px solid #313244',
+  height: 34,
+  minHeight: 34,
+  maxHeight: 34,
+  padding: '0 10px',
+  borderBottom: '1px solid var(--ui-border)',
   userSelect: 'none',
 };
 
@@ -164,8 +177,10 @@ const leftStyle: CSSProperties = {
 };
 
 const nameStyle: CSSProperties = {
-  color: '#cdd6f4',
-  fontSize: 12,
+  color: 'var(--ui-text-primary)',
+  fontSize: 11,
+  fontFamily: 'var(--ui-font-mono)',
+  letterSpacing: '0.08em',
   cursor: 'default',
   whiteSpace: 'nowrap',
   overflow: 'hidden',
@@ -173,14 +188,16 @@ const nameStyle: CSSProperties = {
 };
 
 const inputStyle: CSSProperties = {
-  background: '#1e1e2e',
-  border: '1px solid #313244',
-  borderRadius: 3,
-  color: '#cdd6f4',
-  fontSize: 12,
-  padding: '1px 4px',
+  background: 'var(--ui-panel-bg-alt)',
+  border: '1px solid var(--ui-border)',
+  borderRadius: 'var(--ui-radius)',
+  color: 'var(--ui-text-primary)',
+  fontFamily: 'var(--ui-font-mono)',
+  fontSize: 11,
+  letterSpacing: '0.08em',
+  padding: '2px 6px',
   outline: 'none',
-  width: 120,
+  width: 140,
 };
 
 const actionsStyle: CSSProperties = {
@@ -195,8 +212,8 @@ const iconButtonStyle: CSSProperties = {
   justifyContent: 'center',
   width: 22,
   height: 22,
-  border: 'none',
-  borderRadius: 3,
+  border: '1px solid transparent',
+  borderRadius: 'var(--ui-radius)',
   cursor: 'pointer',
   padding: 0,
 };

@@ -51,6 +51,7 @@ just dev
 |---|---|
 | `just dev` | Start Tauri dev server with hot-reload |
 | `just test` | Run Rust and frontend tests |
+| `just test-e2e` | Run browser E2E/manual-validation tests (Playwright) |
 | `just lint` | Run cargo fmt, clippy, eslint, and typecheck |
 | `just coverage` | Run tests with coverage reports |
 | `just bench` | Run Rust benchmarks (Criterion) |
@@ -61,6 +62,7 @@ just dev
 bun test              # Run Vitest
 bun run test:watch    # Watch mode
 bun run test:coverage # Coverage report
+bun run test:e2e      # Browser validation tests (Playwright)
 bun run lint          # ESLint
 bun run typecheck     # TypeScript check
 ```
@@ -154,8 +156,11 @@ obelisk session save
 
 ```sh
 just test       # All tests (Rust + frontend)
+just test-e2e   # Browser validation tests
 just coverage   # With coverage reports
 ```
+
+For MCP/manual browser verification steps, see [`docs/manual-browser-validation.md`](docs/manual-browser-validation.md).
 
 ### Coverage thresholds (frontend)
 

@@ -168,7 +168,7 @@ fn pty_read_loop(mut reader: Box<dyn Read + Send>, pty_id: String, emitter: Arc<
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                let (forwarded, notifications) = parser.feed(&buf[..n]);
+                let (forwarded, notifications, cwd) = parser.feed(&buf[..n]);
                 let data = BASE64.encode(&forwarded);
                 let payload = serde_json::json!({ "data": data });
                 let _ = emitter.emit(&format!("pty-data-{pty_id}"), payload);
@@ -180,6 +180,10 @@ fn pty_read_loop(mut reader: Box<dyn Read + Send>, pty_id: String, emitter: Arc<
                         "body": notif.body,
                     });
                     let _ = emitter.emit("notification-raw", payload);
+                }
+                if let Some(cwd) = cwd {
+                    let payload = serde_json::json!({ "cwd": cwd });
+                    let _ = emitter.emit(&format!("cwd-changed-{pty_id}"), payload);
                 }
             }
             Err(_) => break,
