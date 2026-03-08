@@ -232,5 +232,5 @@ jobs:
         run: bun tauri build
       - name: Smoke test (binary exists)
         run: |
-          ls -la src-tauri/target/release/bundle/ || echo "Bundle directory listing"
-          test -d src-tauri/target/release/bundle/ && echo "Build artifacts verified"
+          ls -la target/release/bundle/ || echo "Bundle directory listing"
+          test -d target/release/bundle/ && echo "Build artifacts verified"
