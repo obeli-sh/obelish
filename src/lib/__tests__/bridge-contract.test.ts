@@ -13,34 +13,31 @@ import * as path from 'node:path';
 
 // Extract all command name strings passed to safeInvoke in tauri-bridge.ts
 function extractBridgeCommands(): string[] {
-  const bridgePath = path.resolve(__dirname, '..', 'tauri-bridge.ts');
-  const source = fs.readFileSync(bridgePath, 'utf-8');
-  const matches = source.matchAll(/safeInvoke[^(]*\(\s*'([^']+)'/g);
+  const src = fs.readFileSync(
+    path.resolve(__dirname, '../tauri-bridge.ts'),
+    'utf-8',
+  );
+  const matches = src.matchAll(/safeInvoke[^(]*\(\s*'([^']+)'/g);
   return [...matches].map((m) => m[1]);
 }
 
 // Extract all handler keys registered in browser-mock.ts
 function extractMockHandlers(): string[] {
-  const mockPath = path.resolve(__dirname, '..', 'browser-mock.ts');
-  const source = fs.readFileSync(mockPath, 'utf-8');
-  const lines = source.split('\n');
-  const commands: string[] = [];
-  let inHandlers = false;
-  for (const line of lines) {
-    if (line.match(/^const handlers:\s*Record/)) {
-      inHandlers = true;
-      continue;
-    }
-    if (inHandlers && line.match(/^\};/)) {
-      break;
-    }
-    if (inHandlers) {
-      // Match top-level handler keys like `  session_restore: (args) =>`
-      const m = line.match(/^\s{2}(\w+):\s*(?:\(|function)/);
-      if (m) commands.push(m[1]);
-    }
+  const src = fs.readFileSync(
+    path.resolve(__dirname, '../browser-mock.ts'),
+    'utf-8',
+  );
+  const startIdx = src.indexOf('const handlers:');
+  if (startIdx === -1) throw new Error('Could not find handlers record in browser-mock.ts');
+  const braceStart = src.indexOf('{', startIdx);
+  const endIdx = src.indexOf('\n};', braceStart);
+  if (endIdx === -1) throw new Error('Could not find end of handlers record');
+  const body = src.slice(braceStart + 1, endIdx);
+  const keys: string[] = [];
+  for (const m of body.matchAll(/^  (\w+)\s*[:(]/gm)) {
+    keys.push(m[1]);
   }
-  return commands;
+  return keys;
 }
 
 // Extract all #[tauri::command] function names from commands.rs
@@ -51,7 +48,6 @@ function extractRustCommands(): string[] {
   const commands: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes('#[tauri::command]')) {
-      // Scan forward for the `pub fn name(` or `pub async fn name(` line
       for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
         const fnMatch = lines[j].match(/pub\s+(?:async\s+)?fn\s+(\w+)\s*\(/);
         if (fnMatch) {
@@ -69,6 +65,10 @@ describe('Bridge Contract: command name sync', () => {
   const mockHandlers = extractMockHandlers();
   const rustCommands = extractRustCommands();
 
+  const bridgeSet = new Set(bridgeCommands);
+  const mockSet = new Set(mockHandlers);
+  const rustSet = new Set(rustCommands);
+
   it('extracts at least one command from each source', () => {
     expect(bridgeCommands.length).toBeGreaterThan(0);
     expect(mockHandlers.length).toBeGreaterThan(0);
@@ -76,27 +76,23 @@ describe('Bridge Contract: command name sync', () => {
   });
 
   it('every bridge command has a corresponding mock handler', () => {
-    const mockSet = new Set(mockHandlers);
     const missing = bridgeCommands.filter((cmd) => !mockSet.has(cmd));
-    expect(missing).toEqual([]);
+    expect(missing, `Bridge commands missing mock handlers: ${missing.join(', ')}`).toEqual([]);
   });
 
   it('every bridge command exists as a #[tauri::command] in Rust', () => {
-    const rustSet = new Set(rustCommands);
     const missing = bridgeCommands.filter((cmd) => !rustSet.has(cmd));
-    expect(missing).toEqual([]);
+    expect(missing, `Bridge commands missing Rust implementations: ${missing.join(', ')}`).toEqual([]);
   });
 
   it('every mock handler corresponds to a bridge command', () => {
-    const bridgeSet = new Set(bridgeCommands);
     const extra = mockHandlers.filter((cmd) => !bridgeSet.has(cmd));
-    expect(extra).toEqual([]);
+    expect(extra, `Orphan mock handlers: ${extra.join(', ')}`).toEqual([]);
   });
 
   it('every Rust command is used by the bridge', () => {
-    const bridgeSet = new Set(bridgeCommands);
     const unused = rustCommands.filter((cmd) => !bridgeSet.has(cmd));
-    expect(unused).toEqual([]);
+    expect(unused, `Orphan Rust commands: ${unused.join(', ')}`).toEqual([]);
   });
 
   it('no duplicate command names in bridge', () => {
@@ -106,7 +102,27 @@ describe('Bridge Contract: command name sync', () => {
       if (seen.has(cmd)) dupes.push(cmd);
       seen.add(cmd);
     }
-    expect(dupes).toEqual([]);
+    expect(dupes, `Duplicate bridge commands: ${dupes.join(', ')}`).toEqual([]);
+  });
+
+  it('no duplicate mock handler keys', () => {
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    for (const key of mockHandlers) {
+      if (seen.has(key)) dupes.push(key);
+      seen.add(key);
+    }
+    expect(dupes, `Duplicate mock handlers: ${dupes.join(', ')}`).toEqual([]);
+  });
+
+  it('no duplicate Rust command names', () => {
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    for (const cmd of rustCommands) {
+      if (seen.has(cmd)) dupes.push(cmd);
+      seen.add(cmd);
+    }
+    expect(dupes, `Duplicate Rust commands: ${dupes.join(', ')}`).toEqual([]);
   });
 });
 
@@ -797,7 +813,7 @@ describe('Layout behavioral correctness', () => {
     const layout = getLayout(ws);
     const paneA = (layout as { paneId: string }).paneId;
 
-    // Split A horizontally → A + B
+    // Split A horizontally -> A + B
     const after1 = (await mockInvoke('pane_split', {
       paneId: paneA,
       direction: 'horizontal',
@@ -807,7 +823,7 @@ describe('Layout behavioral correctness', () => {
     expect((layout1 as { direction: string }).direction).toBe('horizontal');
     const paneB = ((layout1 as { children: LayoutNode[] }).children[1] as { paneId: string }).paneId;
 
-    // Split B vertically → B + C
+    // Split B vertically -> B + C
     const after2 = (await mockInvoke('pane_split', {
       paneId: paneB,
       direction: 'vertical',

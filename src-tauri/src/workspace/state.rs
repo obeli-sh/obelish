@@ -301,7 +301,7 @@ impl WorkspaceState {
         let pane = self
             .panes
             .remove(pane_id)
-            .expect("pane must exist after passing find_workspace_by_pane check");
+            .expect("pane must exist in map after find_workspace_by_pane validation");
         let pty_id = pane.pty_id.clone();
 
         let workspace = &mut self.workspaces[ws_idx];

@@ -87,7 +87,7 @@ describe('ShellSelector', () => {
   it('renders a label for the group', async () => {
     render(<ShellSelector />);
 
-    await screen.findByText('Default Shell');
+    expect(await screen.findByText('Default Shell')).toBeInTheDocument();
   });
 
   it('handles empty shell list gracefully', async () => {

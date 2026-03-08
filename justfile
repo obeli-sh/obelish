@@ -70,6 +70,22 @@ release-all: release release-cli
 icons source:
     bun tauri icon {{source}}
 
+# Run visual regression tests
+test-visual:
+    bun run test:e2e -- --grep "Visual Regression"
+
+# Update visual regression snapshots
+test-visual-update:
+    bun run test:e2e -- --grep "Visual Regression" --update-snapshots
+
+# Run Rust mutation testing (cargo-mutants)
+mutants:
+    cd src-tauri && cargo mutants
+
+# Run TypeScript mutation testing (Stryker)
+mutate-ts:
+    bun run mutate
+
 # Print binary and bundle sizes
 check-sizes:
     @echo "=== CLI binary ==="

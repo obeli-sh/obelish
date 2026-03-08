@@ -1,19 +1,9 @@
-# cargo-mutants configuration for targeted mutation testing
-# Run with: just mutants
-# Install: cargo install cargo-mutants
+# cargo-mutants configuration for Obelisk
+# Target workspace state management and command handlers
 
-# Only mutate high-value modules
-examine_re = [
-  "src/workspace/",
-  "src/commands\\.rs",
+[examine]
+# Only mutate the core workspace logic and command handlers
+globs = [
+  "src/workspace/*.rs",
+  "src/commands.rs",
 ]
-
-# Skip test helpers and generated code
-exclude_re = [
-  "tests/",
-  "benches/",
-  "bindings/",
-]
-
-# Timeout per mutant (seconds)
-timeout = 120

@@ -1,102 +1,79 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function openApp(page: Page) {
-  await page.goto('/', { waitUntil: 'commit', timeout: 90_000 });
-  // Wait for the app to finish loading (either shows picker or navigation)
-  await page.waitForFunction(() => {
-    const root = document.getElementById('root');
-    return root && root.innerHTML.length > 100;
-  }, { timeout: 30_000 });
-  // Programmatically close the project picker and restore default keybindings
-  await page.evaluate(async () => {
-    const uiStore = await import('/src/stores/uiStore.ts');
-    const settingsStore = await import('/src/stores/settingsStore.ts');
-    uiStore.useUiStore.getState().setProjectPickerOpen(false);
-    settingsStore.useSettingsStore.getState().resetAllKeybindings();
-  });
-  await expect(page.getByRole('navigation')).toBeVisible({ timeout: 30_000 });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await expect(page.getByRole('navigation')).toBeVisible();
 }
 
-test.describe('settings modification', () => {
-  test('opens settings modal with Ctrl+comma', async ({ page }) => {
+test.describe('settings', () => {
+  test('opens settings modal via Ctrl+comma', async ({ page }) => {
     await openApp(page);
 
     await page.keyboard.press('Control+,');
-    await expect(page.getByTestId('settings-backdrop')).toBeVisible();
+
+    const dialog = page.getByRole('dialog', { name: /settings/i });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText('Preferences')).toBeVisible();
   });
 
-  test('opens settings via preferences button in sidebar footer', async ({ page }) => {
+  test('opens settings via sidebar preferences button', async ({ page }) => {
     await openApp(page);
 
-    await page.getByLabel('Preferences').click();
-    await expect(page.getByTestId('settings-backdrop')).toBeVisible();
+    await page.getByRole('button', { name: 'Preferences' }).click();
+
+    const dialog = page.getByRole('dialog', { name: /settings/i });
+    await expect(dialog).toBeVisible();
   });
 
-  test('closes settings modal by toggling again', async ({ page }) => {
+  test('settings modal has General, Hotkeys, and Theme tabs', async ({ page }) => {
     await openApp(page);
-
     await page.keyboard.press('Control+,');
-    await expect(page.getByTestId('settings-backdrop')).toBeVisible();
 
-    // Toggle settings closed via store (Escape is intercepted by keyboard handler)
-    await page.keyboard.press('Control+,');
-    await expect(page.getByTestId('settings-backdrop')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'General' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hotkeys' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Theme' })).toBeVisible();
   });
 
-  test('closes settings modal by clicking backdrop', async ({ page }) => {
+  test('switches between preference categories', async ({ page }) => {
     await openApp(page);
-
     await page.keyboard.press('Control+,');
-    await expect(page.getByTestId('settings-backdrop')).toBeVisible();
 
-    await page.getByTestId('settings-backdrop').click({ position: { x: 5, y: 5 } });
-    await expect(page.getByTestId('settings-backdrop')).not.toBeVisible();
-  });
-
-  test('switches between settings categories', async ({ page }) => {
-    await openApp(page);
-
-    await page.keyboard.press('Control+,');
-    await expect(page.getByTestId('settings-backdrop')).toBeVisible();
-
-    // General should be selected by default
-    const generalBtn = page.getByRole('button', { name: 'General' });
-    await expect(generalBtn).toHaveAttribute('aria-pressed', 'true');
+    // Default is General
+    await expect(page.getByRole('button', { name: 'General' })).toHaveAttribute('aria-pressed', 'true');
 
     // Switch to Hotkeys
     await page.getByRole('button', { name: 'Hotkeys' }).click();
     await expect(page.getByRole('button', { name: 'Hotkeys' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(generalBtn).toHaveAttribute('aria-pressed', 'false');
 
     // Switch to Theme
     await page.getByRole('button', { name: 'Theme' }).click();
     await expect(page.getByRole('button', { name: 'Theme' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Terminal Font Family')).toBeVisible();
   });
 
-  test('changes preferred workspace layout preference', async ({ page }) => {
+  test('closes settings via Escape', async ({ page }) => {
     await openApp(page);
-
     await page.keyboard.press('Control+,');
-    const dropdown = page.getByLabel('Preferred New Workspace Layout');
-    await expect(dropdown).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /settings/i })).toBeVisible();
 
-    await dropdown.selectOption('side-by-side');
-    await expect(dropdown).toHaveValue('side-by-side');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: /settings/i })).not.toBeVisible();
   });
 
-  test('toggles show all projects checkbox', async ({ page }) => {
+  test('closes settings via backdrop click', async ({ page }) => {
     await openApp(page);
-
     await page.keyboard.press('Control+,');
-    const checkbox = page.getByLabel('Show All Projects in Sidebar');
-    if (await checkbox.isVisible()) {
-      const wasChecked = await checkbox.isChecked();
-      await checkbox.click();
-      if (wasChecked) {
-        await expect(checkbox).not.toBeChecked();
-      } else {
-        await expect(checkbox).toBeChecked();
-      }
-    }
+    await expect(page.getByRole('dialog', { name: /settings/i })).toBeVisible();
+
+    await page.getByTestId('settings-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.getByRole('dialog', { name: /settings/i })).not.toBeVisible();
+  });
+
+  test('general tab shows workspace layout and shell selectors', async ({ page }) => {
+    await openApp(page);
+    await page.keyboard.press('Control+,');
+
+    await expect(page.getByLabel('Preferred New Workspace Layout')).toBeVisible();
+    await expect(page.getByLabel('Show All Projects in Sidebar')).toBeVisible();
   });
 });

@@ -572,7 +572,7 @@ const handlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
 export async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
   const handler = handlers[cmd];
   if (handler) return handler(args);
-  console.warn(`[browser-mock] unregistered command invoked: "${cmd}". Add a handler to browser-mock.ts.`);
+  console.warn(`[browser-mock] unregistered command invoked: "${cmd}". Add a handler to browser-mock.ts.`, args);
   return undefined;
 }
 

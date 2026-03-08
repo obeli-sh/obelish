@@ -110,7 +110,7 @@ describe('AppLayout', () => {
     mockInvoke('session_restore', () => Promise.reject(new Error('backend down')));
     render(<AppLayout />);
 
-    await screen.findByText(/Failed to load workspaces: backend down/);
+    expect(await screen.findByText(/Failed to load workspaces: backend down/)).toBeInTheDocument();
   });
 
   it('session restore returns workspaces (backend creates default if needed)', async () => {
@@ -134,7 +134,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await screen.findByText('My Workspace');
+    expect(await screen.findByText('My Workspace')).toBeInTheDocument();
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
@@ -145,7 +145,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await screen.findByTestId('terminal-pane-pane-1');
+    expect(await screen.findByTestId('terminal-pane-pane-1')).toBeInTheDocument();
   });
 
   it('uses edge-to-edge layout without outer content padding', async () => {
@@ -175,9 +175,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await screen.findByText('Workspace 2');
-
-    await user.click(screen.getByText('Workspace 2'));
+    await user.click(await screen.findByText('Workspace 2'));
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-2');
   });
 
@@ -193,6 +191,7 @@ describe('AppLayout', () => {
     act(() => {
       useUiStore.getState().setProjectPickerOpen(true);
     });
+
 
     await waitFor(() => {
       expect(screen.getByText('Open a Project')).toBeInTheDocument();
@@ -337,7 +336,7 @@ describe('AppLayout', () => {
       });
     });
 
-    await screen.findByText('Updated Name');
+    expect(await screen.findByText('Updated Name')).toBeInTheDocument();
   });
 
   it('subscribes to workspace-removed event and removes workspace from store', async () => {

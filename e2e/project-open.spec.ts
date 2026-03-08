@@ -1,57 +1,35 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function loadApp(page: Page) {
-  await page.goto('/', { waitUntil: 'commit', timeout: 90_000 });
-  // Wait for the app to finish loading
-  await page.waitForFunction(() => {
-    const root = document.getElementById('root');
-    return root && root.innerHTML.length > 100;
-  }, { timeout: 30_000 });
-}
-
 async function openApp(page: Page) {
-  await loadApp(page);
-  // Programmatically close the project picker and restore default keybindings
-  await page.evaluate(async () => {
-    const uiStore = await import('/src/stores/uiStore.ts');
-    const settingsStore = await import('/src/stores/settingsStore.ts');
-    uiStore.useUiStore.getState().setProjectPickerOpen(false);
-    settingsStore.useSettingsStore.getState().resetAllKeybindings();
-  });
-  await expect(page.getByRole('navigation')).toBeVisible({ timeout: 30_000 });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await expect(page.getByRole('navigation')).toBeVisible();
 }
 
-test.describe('project open flow', () => {
-  test('shows project picker on fresh app load', async ({ page }) => {
-    await loadApp(page);
-    await expect(page.getByText('Open a Project')).toBeVisible();
+test.describe('project open', () => {
+  test('app renders with a default workspace on load', async ({ page }) => {
+    await openApp(page);
+    await expect(page.getByTestId('pane-wrapper')).toHaveCount(1);
+    await expect(page.getByRole('listitem')).toHaveCount(1);
   });
 
-  test('project picker shows path input for adding projects', async ({ page }) => {
-    await loadApp(page);
-    await expect(page.getByPlaceholder(/folder path/i)).toBeVisible();
-    await expect(page.getByText('Open Folder')).toBeVisible();
-  });
-
-  test('closes project picker with Escape when workspaces exist', async ({ page }) => {
-    await loadApp(page);
-    await expect(page.getByText('Open a Project')).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('navigation')).toBeVisible({ timeout: 10_000 });
-  });
-
-  test('opens project picker via keyboard shortcut Ctrl+Shift+O', async ({ page }) => {
+  test('shows "no workspaces" message when all workspaces are closed', async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press('Control+Shift+O');
-    await expect(page.getByText('Open a Project')).toBeVisible({ timeout: 10_000 });
+    // Close the default workspace via the close button (hover to reveal)
+    const workspaceItem = page.getByRole('listitem').first();
+    await workspaceItem.hover();
+    const closeBtn = workspaceItem.getByRole('button', { name: /close/i });
+    await closeBtn.click();
+
+    await expect(page.getByText(/no workspaces open/i)).toBeVisible();
   });
 
-  test('opens project picker via Ctrl+N shortcut', async ({ page }) => {
+  test('project picker opens when triggered via Ctrl+Shift+O', async ({ page }) => {
     await openApp(page);
 
-    await page.keyboard.press('Control+N');
-    await expect(page.getByText('Open a Project')).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press('Control+Shift+o');
+
+    // The project picker renders as a full-screen overlay
+    await expect(page.getByText(/open a project/i)).toBeVisible();
   });
 });

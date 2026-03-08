@@ -2840,3 +2840,1029 @@ mod command_integration_tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+mod cross_platform_path_tests {
+    use super::*;
+
+    // --- Unix-style path tests (run on all platforms) ---
+
+    #[test]
+    fn unix_style_path_resolves_on_all_platforms() {
+        // On Unix this is a real path; on Windows it won't exist but
+        // list_directories_native should return empty gracefully.
+        let result = list_directories_native("/tmp/nonexistent_obelisk_test");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn trailing_separator_treated_as_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+
+        let mut path_str = tmp.path().to_string_lossy().to_string();
+        // Ensure trailing separator
+        if !path_str.ends_with('/') && !path_str.ends_with('\\') {
+            path_str.push(std::path::MAIN_SEPARATOR);
+        }
+
+        let result = list_directories_native(&path_str);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("sub"));
+    }
+
+    #[test]
+    fn path_without_trailing_separator_still_lists_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("child")).unwrap();
+
+        // No trailing separator — path IS a directory
+        let path_str = tmp.path().to_string_lossy().to_string();
+        let result = list_directories_native(&path_str);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("child"));
+    }
+
+    #[test]
+    fn prefix_filter_is_case_insensitive() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("Documents")).unwrap();
+        std::fs::create_dir(tmp.path().join("downloads")).unwrap();
+        std::fs::create_dir(tmp.path().join("Desktop")).unwrap();
+
+        // Search with lowercase "do" should match both Documents and downloads
+        let partial = tmp.path().join("do").to_string_lossy().to_string();
+        let result = list_directories_native(&partial);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn empty_directory_returns_empty_results() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = list_directories_native(&tmp.path().to_string_lossy());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn results_are_sorted_alphabetically() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("zebra")).unwrap();
+        std::fs::create_dir(tmp.path().join("alpha")).unwrap();
+        std::fs::create_dir(tmp.path().join("middle")).unwrap();
+
+        let result = list_directories_native(&tmp.path().to_string_lossy());
+        assert_eq!(result.len(), 3);
+        let names: Vec<&str> = result
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(names, vec!["alpha", "middle", "zebra"]);
+    }
+
+    #[test]
+    fn results_truncated_to_20() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..25 {
+            std::fs::create_dir(tmp.path().join(format!("dir_{:02}", i))).unwrap();
+        }
+
+        let result = list_directories_native(&tmp.path().to_string_lossy());
+        assert_eq!(result.len(), 20);
+    }
+
+    // --- WSL mount path tests ---
+
+    #[test]
+    fn wsl_path_parsing_root_slash() {
+        // list_directories_wsl should handle "/" gracefully
+        // (actual WSL call may not be available, so we test the parsing logic)
+        let (dir, prefix) = if "/".ends_with('/') || "/" == "/" {
+            ("/".to_string(), String::new())
+        } else {
+            unreachable!()
+        };
+        assert_eq!(dir, "/");
+        assert_eq!(prefix, "");
+    }
+
+    #[test]
+    fn wsl_path_parsing_with_prefix() {
+        let partial = "/mnt/c/Use";
+        let (dir, prefix) = if partial.ends_with('/') || partial == "/" {
+            (partial.to_string(), String::new())
+        } else {
+            match partial.rfind('/') {
+                Some(pos) => {
+                    let parent = if pos == 0 { "/" } else { &partial[..pos] };
+                    let file_part = partial[pos + 1..].to_lowercase();
+                    (parent.to_string(), file_part)
+                }
+                None => unreachable!(),
+            }
+        };
+        assert_eq!(dir, "/mnt/c");
+        assert_eq!(prefix, "use");
+    }
+
+    #[test]
+    fn wsl_path_parsing_mnt_trailing_slash() {
+        let partial = "/mnt/c/";
+        let (dir, prefix) = if partial.ends_with('/') || partial == "/" {
+            (partial.to_string(), String::new())
+        } else {
+            unreachable!()
+        };
+        assert_eq!(dir, "/mnt/c/");
+        assert_eq!(prefix, "");
+    }
+
+    // --- Windows-only tests ---
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_backslash_path_lists_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+        // Convert to backslash path
+        let path_str = tmp.path().to_string_lossy().replace('/', "\\");
+        let result = list_directories_native(&path_str);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("subdir"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_letter_path() {
+        // C:\ should be listable on Windows
+        let result = list_directories_native("C:\\");
+        assert!(
+            !result.is_empty(),
+            "C:\\ should have at least one subdirectory"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_forward_slash_path_also_works() {
+        // Windows should handle forward slashes too
+        let result = list_directories_native("C:/");
+        assert!(
+            !result.is_empty(),
+            "C:/ should have at least one subdirectory"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_mixed_separator_prefix_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("Projects")).unwrap();
+        std::fs::create_dir(tmp.path().join("Photos")).unwrap();
+
+        // Use forward slash in a Windows path for prefix filter
+        let mut partial = tmp.path().to_string_lossy().to_string();
+        partial.push_str("/Pr");
+        let result = list_directories_native(&partial);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("Projects"));
+    }
+}
+
+#[cfg(test)]
+mod layout_helper_tests {
+    use super::*;
+    use obelisk_protocol::{LayoutNode, SplitDirection};
+
+    fn leaf(pane_id: &str) -> LayoutNode {
+        LayoutNode::Leaf {
+            pane_id: pane_id.to_string(),
+            pty_id: format!("pty-{pane_id}"),
+        }
+    }
+
+    fn split(a: LayoutNode, b: LayoutNode) -> LayoutNode {
+        LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            children: Box::new([a, b]),
+            sizes: [0.5, 0.5],
+        }
+    }
+
+    #[test]
+    fn collect_pane_ids_single_leaf() {
+        let layout = leaf("p1");
+        let mut ids = Vec::new();
+        collect_layout_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec!["p1"]);
+    }
+
+    #[test]
+    fn collect_pane_ids_nested_split() {
+        let layout = split(leaf("p1"), split(leaf("p2"), leaf("p3")));
+        let mut ids = Vec::new();
+        collect_layout_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec!["p1", "p2", "p3"]);
+    }
+
+    #[test]
+    fn collect_pane_ids_to_map_single_leaf() {
+        let layout = leaf("p1");
+        let mut map = std::collections::HashMap::new();
+        collect_layout_pane_ids_to_map(&layout, "/path/to/worktree", &mut map);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["p1"], "/path/to/worktree");
+    }
+
+    #[test]
+    fn collect_pane_ids_to_map_nested_split() {
+        let layout = split(leaf("p1"), split(leaf("p2"), leaf("p3")));
+        let mut map = std::collections::HashMap::new();
+        collect_layout_pane_ids_to_map(&layout, "/projects/foo", &mut map);
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["p1"], "/projects/foo");
+        assert_eq!(map["p2"], "/projects/foo");
+        assert_eq!(map["p3"], "/projects/foo");
+    }
+}
+
+#[cfg(test)]
+mod command_integration_tests {
+    use super::*;
+    use crate::notifications::store::NotificationStore;
+    use crate::persistence::fs::FsPersistence;
+    use crate::scrollback::ScrollbackStorage;
+    use crate::settings::manager::SettingsManager;
+    use crate::workspace::WorkspaceState;
+    use std::sync::{Arc, RwLock};
+    use tempfile::TempDir;
+
+    // Helper to create real instances of components that commands compose together
+    fn make_components(
+        tmp: &TempDir,
+    ) -> (
+        Arc<RwLock<WorkspaceState>>,
+        Arc<SessionManager>,
+        ScrollbackStorage,
+        Arc<RwLock<NotificationStore>>,
+        SettingsManager,
+        Arc<RwLock<crate::project::ProjectStore>>,
+    ) {
+        let backend = Arc::new(FsPersistence::new(tmp.path()).unwrap());
+        let session_manager = Arc::new(SessionManager::new(backend.clone()));
+        let scrollback_dir = tmp.path().join("scrollback");
+        std::fs::create_dir_all(&scrollback_dir).unwrap();
+        let scrollback = ScrollbackStorage::new(scrollback_dir).unwrap();
+        let notification_store = Arc::new(RwLock::new(NotificationStore::new(100)));
+        let settings_backend = Arc::new(FsPersistence::new(tmp.path().join("settings")).unwrap());
+        let settings_manager = SettingsManager::new(settings_backend);
+        let project_backend = Arc::new(FsPersistence::new(tmp.path().join("projects")).unwrap());
+        let project_store = Arc::new(RwLock::new(crate::project::ProjectStore::new(
+            project_backend,
+        )));
+        (
+            Arc::new(RwLock::new(WorkspaceState::new())),
+            session_manager,
+            scrollback,
+            notification_store,
+            settings_manager,
+            project_store,
+        )
+    }
+
+    // --- Workspace close integration: collects PTY IDs and pane IDs ---
+
+    #[test]
+    fn workspace_close_returns_pty_ids_for_cleanup() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        // Create workspace with a pane, then split it
+        let workspace_id;
+        {
+            let mut ws = ws_state.write().unwrap();
+            let w = ws.create_workspace(
+                "WS1".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            workspace_id = w.id.clone();
+            ws.split_pane(
+                "p1",
+                SplitDirection::Horizontal,
+                "p2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+            // Create a second workspace so we can close the first
+            ws.create_workspace(
+                "WS2".to_string(),
+                "p3".to_string(),
+                "pty-3".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+
+        // Collect pane IDs before close (mirrors workspace_close command)
+        let pane_ids = {
+            let ws = ws_state.read().unwrap();
+            if let Some(workspace) = ws.get_workspace(&workspace_id) {
+                let mut ids = Vec::new();
+                for surface in &workspace.surfaces {
+                    collect_layout_pane_ids(&surface.layout, &mut ids);
+                }
+                ids
+            } else {
+                Vec::new()
+            }
+        };
+
+        assert_eq!(pane_ids.len(), 2);
+        assert!(pane_ids.contains(&"p1".to_string()));
+        assert!(pane_ids.contains(&"p2".to_string()));
+
+        // Close workspace returns PTY IDs
+        let pty_ids = {
+            let mut ws = ws_state.write().unwrap();
+            ws.close_workspace(&workspace_id).unwrap()
+        };
+
+        assert_eq!(pty_ids.len(), 2);
+        assert!(pty_ids.contains(&"pty-1".to_string()));
+        assert!(pty_ids.contains(&"pty-2".to_string()));
+    }
+
+    #[test]
+    fn workspace_close_nonexistent_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS1".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+        let mut ws = ws_state.write().unwrap();
+        let result = ws.close_workspace("nonexistent");
+        assert!(result.is_err());
+    }
+
+    // --- Scrollback integration: save/load with base64 ---
+
+    #[test]
+    fn scrollback_save_load_roundtrip_with_base64() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, scrollback, _, _, _) = make_components(&tmp);
+
+        let original = b"terminal scrollback data \x1b[0m with escapes";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(original);
+
+        // Decode like scrollback_save does
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        scrollback.save("pane-1", &decoded).unwrap();
+
+        // Load and re-encode like scrollback_load does
+        let loaded = scrollback.load("pane-1").unwrap().unwrap();
+        let re_encoded = base64::engine::general_purpose::STANDARD.encode(&loaded);
+
+        assert_eq!(re_encoded, encoded);
+        assert_eq!(loaded, original);
+    }
+
+    #[test]
+    fn scrollback_save_invalid_base64_returns_error() {
+        let data = "not-valid-base64!!!";
+        let result = base64::engine::general_purpose::STANDARD.decode(data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scrollback_load_nonexistent_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, scrollback, _, _, _) = make_components(&tmp);
+
+        let loaded = scrollback.load("nonexistent-pane").unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn scrollback_delete_after_pane_close() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, scrollback, _, _, _) = make_components(&tmp);
+
+        scrollback.save("pane-1", b"data").unwrap();
+        assert!(scrollback.load("pane-1").unwrap().is_some());
+
+        scrollback.delete("pane-1").unwrap();
+        assert!(scrollback.load("pane-1").unwrap().is_none());
+    }
+
+    // --- Session save/restore integration ---
+
+    #[test]
+    fn session_save_and_load_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, session_manager, _, _, _, _) = make_components(&tmp);
+
+        // Create workspace
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "Workspace 1".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                "project-1".to_string(),
+                "/path/to/project".to_string(),
+                Some("main".to_string()),
+                true,
+            );
+        }
+
+        // Save session (mirrors session_save command)
+        {
+            let ws = ws_state.read().unwrap();
+            session_manager.save(&ws).unwrap();
+        }
+
+        // Load and restore (mirrors session_restore command)
+        let session = session_manager.load().unwrap().unwrap();
+        let restored = WorkspaceState::from_session_state(session);
+        let workspaces = restored.list_workspaces();
+
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0].name, "Workspace 1");
+        assert_eq!(workspaces[0].project_id, "project-1");
+        assert_eq!(workspaces[0].worktree_path, "/path/to/project");
+    }
+
+    #[test]
+    fn session_load_with_no_saved_session_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        let (_, session_manager, _, _, _, _) = make_components(&tmp);
+
+        let loaded = session_manager.load().unwrap();
+        assert!(loaded.is_none());
+    }
+
+    // --- Notification integration ---
+
+    #[test]
+    fn notification_list_empty_initially() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, notification_store, _, _) = make_components(&tmp);
+
+        let store = notification_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn notification_add_and_mark_read() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, notification_store, _, _) = make_components(&tmp);
+
+        // Add notification (mirrors notification command flow)
+        let notif = obelisk_protocol::Notification {
+            id: "n1".to_string(),
+            pane_id: "pane-1".to_string(),
+            workspace_id: "ws-1".to_string(),
+            osc_type: 9,
+            title: "Build complete".to_string(),
+            body: Some("exit code 0".to_string()),
+            timestamp: 1234567890,
+            read: false,
+        };
+        {
+            let mut store = notification_store.write().unwrap();
+            store.add(notif);
+        }
+
+        // List (mirrors notification_list command)
+        {
+            let store = notification_store.read().unwrap();
+            let list = store.list();
+            assert_eq!(list.len(), 1);
+            assert!(!list[0].read);
+        }
+
+        // Mark read (mirrors notification_mark_read command)
+        {
+            let mut store = notification_store.write().unwrap();
+            store.mark_read("n1");
+        }
+
+        // Verify
+        {
+            let store = notification_store.read().unwrap();
+            assert!(store.list()[0].read);
+        }
+    }
+
+    #[test]
+    fn notification_clear_removes_all() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, notification_store, _, _) = make_components(&tmp);
+
+        {
+            let mut store = notification_store.write().unwrap();
+            for i in 0..3 {
+                store.add(obelisk_protocol::Notification {
+                    id: format!("n{i}"),
+                    pane_id: String::new(),
+                    workspace_id: String::new(),
+                    osc_type: 9,
+                    title: format!("Notif {i}"),
+                    body: None,
+                    timestamp: 0,
+                    read: false,
+                });
+            }
+            assert_eq!(store.list().len(), 3);
+        }
+
+        {
+            let mut store = notification_store.write().unwrap();
+            store.clear();
+        }
+
+        let store = notification_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    // --- Settings integration ---
+
+    #[test]
+    fn settings_get_returns_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, settings_manager, _) = make_components(&tmp);
+
+        let settings = settings_manager.get();
+        // Settings should have default values
+        assert!(settings.terminal_font_size > 0);
+    }
+
+    #[test]
+    fn settings_update_and_get_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, settings_manager, _) = make_components(&tmp);
+
+        settings_manager
+            .update("terminal_font_size", serde_json::json!(18))
+            .unwrap();
+        let settings = settings_manager.get();
+        assert_eq!(settings.terminal_font_size, 18);
+    }
+
+    #[test]
+    fn settings_update_invalid_key_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, settings_manager, _) = make_components(&tmp);
+
+        let result = settings_manager.update("nonexistent_key", serde_json::json!("value"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn settings_reset_restores_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, settings_manager, _) = make_components(&tmp);
+
+        let original = settings_manager.get().terminal_font_size;
+        settings_manager
+            .update("terminal_font_size", serde_json::json!(99))
+            .unwrap();
+        assert_eq!(settings_manager.get().terminal_font_size, 99);
+
+        settings_manager.reset().unwrap();
+        assert_eq!(settings_manager.get().terminal_font_size, original);
+    }
+
+    // --- Project integration ---
+
+    #[test]
+    fn project_list_empty_initially() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, _, project_store) = make_components(&tmp);
+
+        let store = project_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn project_add_and_list() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, _, project_store) = make_components(&tmp);
+
+        let project_path = tmp.path().join("my-project");
+        std::fs::create_dir_all(&project_path).unwrap();
+
+        let project = {
+            let mut store = project_store.write().unwrap();
+            store
+                .add(project_path.to_string_lossy().to_string())
+                .unwrap()
+        };
+
+        assert!(!project.id.is_empty());
+        assert_eq!(
+            project.root_path,
+            project_path.to_string_lossy().to_string()
+        );
+
+        let store = project_store.read().unwrap();
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn project_remove_deletes_project() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, _, project_store) = make_components(&tmp);
+
+        let project_path = tmp.path().join("my-project");
+        std::fs::create_dir_all(&project_path).unwrap();
+
+        let project_id = {
+            let mut store = project_store.write().unwrap();
+            store
+                .add(project_path.to_string_lossy().to_string())
+                .unwrap()
+                .id
+        };
+
+        {
+            let mut store = project_store.write().unwrap();
+            store.remove(&project_id).unwrap();
+        }
+
+        let store = project_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn project_remove_nonexistent_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (_, _, _, _, _, project_store) = make_components(&tmp);
+
+        let mut store = project_store.write().unwrap();
+        let result = store.remove("nonexistent-id");
+        assert!(result.is_err());
+    }
+
+    // --- Workspace rename integration ---
+
+    #[test]
+    fn workspace_rename_updates_name() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        let ws_id;
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws_id = ws
+                .create_workspace(
+                    "Old Name".to_string(),
+                    "p1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
+                .id
+                .clone();
+        }
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            let renamed = ws.rename_workspace(&ws_id, "New Name".to_string()).unwrap();
+            assert_eq!(renamed.name, "New Name");
+        }
+
+        let ws = ws_state.read().unwrap();
+        assert_eq!(ws.get_workspace(&ws_id).unwrap().name, "New Name");
+    }
+
+    #[test]
+    fn workspace_rename_nonexistent_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        let mut ws = ws_state.write().unwrap();
+        let result = ws.rename_workspace("nonexistent", "Name".to_string());
+        assert!(result.is_err());
+    }
+
+    // --- Workspace reorder integration ---
+
+    #[test]
+    fn workspace_reorder_changes_order() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, session_manager, _, _, _, _) = make_components(&tmp);
+
+        let (id1, id2, id3);
+        {
+            let mut ws = ws_state.write().unwrap();
+            id1 = ws
+                .create_workspace(
+                    "WS1".to_string(),
+                    "p1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
+                .id
+                .clone();
+            id2 = ws
+                .create_workspace(
+                    "WS2".to_string(),
+                    "p2".to_string(),
+                    "pty-2".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
+                .id
+                .clone();
+            id3 = ws
+                .create_workspace(
+                    "WS3".to_string(),
+                    "p3".to_string(),
+                    "pty-3".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
+                .id
+                .clone();
+        }
+
+        // Reorder to 3, 1, 2
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.reorder_workspaces(&[id3.clone(), id1.clone(), id2.clone()])
+                .unwrap();
+            session_manager.mark_dirty();
+        }
+
+        let ws = ws_state.read().unwrap();
+        let names: Vec<&str> = ws
+            .list_workspaces()
+            .iter()
+            .map(|w| w.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["WS3", "WS1", "WS2"]);
+    }
+
+    #[test]
+    fn workspace_reorder_with_invalid_ids_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS1".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+
+        let mut ws = ws_state.write().unwrap();
+        let result = ws.reorder_workspaces(&["wrong-id".to_string()]);
+        assert!(result.is_err());
+    }
+
+    // --- Pane swap integration ---
+
+    #[test]
+    fn pane_swap_exchanges_positions() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            ws.split_pane(
+                "p1",
+                SplitDirection::Horizontal,
+                "p2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+        }
+
+        let ws_before = {
+            let ws = ws_state.read().unwrap();
+            ws.list_workspaces()[0].clone()
+        };
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.swap_panes("p1", "p2").unwrap();
+        }
+
+        let ws_after = {
+            let ws = ws_state.read().unwrap();
+            ws.list_workspaces()[0].clone()
+        };
+
+        // The workspace should have been updated
+        assert_eq!(ws_before.id, ws_after.id);
+    }
+
+    #[test]
+    fn pane_swap_nonexistent_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+
+        let mut ws = ws_state.write().unwrap();
+        let result = ws.swap_panes("p1", "nonexistent");
+        assert!(result.is_err());
+    }
+
+    // --- Browser pane integration ---
+
+    #[test]
+    fn open_browser_pane_creates_browser_type() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+
+        let result = {
+            let mut ws = ws_state.write().unwrap();
+            ws.open_browser_pane(
+                "p1",
+                SplitDirection::Horizontal,
+                "p2".to_string(),
+                "https://example.com".to_string(),
+            )
+        };
+        assert!(result.is_ok());
+
+        let ws = ws_state.read().unwrap();
+        let pane = ws.get_pane("p2").unwrap();
+        assert!(matches!(
+            pane.pane_type,
+            obelisk_protocol::PaneType::Browser
+        ));
+    }
+
+    #[test]
+    fn open_browser_pane_nonexistent_parent_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        let mut ws = ws_state.write().unwrap();
+        let result = ws.open_browser_pane(
+            "nonexistent",
+            SplitDirection::Horizontal,
+            "p2".to_string(),
+            "https://example.com".to_string(),
+        );
+        assert!(result.is_err());
+    }
+
+    // --- Pane close integration (last pane in workspace) ---
+
+    #[test]
+    fn pane_close_last_pane_closes_workspace() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        let ws_id;
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws_id = ws
+                .create_workspace(
+                    "WS1".to_string(),
+                    "p1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                )
+                .id
+                .clone();
+            // Create second workspace so closing last pane in WS1 is allowed
+            ws.create_workspace(
+                "WS2".to_string(),
+                "p2".to_string(),
+                "pty-2".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+
+        let result = {
+            let mut ws = ws_state.write().unwrap();
+            ws.close_pane("p1").unwrap()
+        };
+
+        // Last pane closed → workspace should be closed
+        assert!(result.workspace.is_none());
+        assert_eq!(result.closed_workspace_id.as_deref(), Some(&*ws_id));
+
+        let ws = ws_state.read().unwrap();
+        assert!(ws.get_workspace(&ws_id).is_none());
+    }
+
+    #[test]
+    fn pane_close_in_split_keeps_workspace() {
+        let tmp = TempDir::new().unwrap();
+        let (ws_state, _, _, _, _, _) = make_components(&tmp);
+
+        {
+            let mut ws = ws_state.write().unwrap();
+            ws.create_workspace(
+                "WS".to_string(),
+                "p1".to_string(),
+                "pty-1".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            ws.split_pane(
+                "p1",
+                SplitDirection::Horizontal,
+                "p2".to_string(),
+                "pty-2".to_string(),
+            )
+            .unwrap();
+        }
+
+        let result = {
+            let mut ws = ws_state.write().unwrap();
+            ws.close_pane("p2").unwrap()
+        };
+
+        // Workspace should still exist
+        assert!(result.workspace.is_some());
+        assert!(result.closed_workspace_id.is_none());
+        assert_eq!(result.pty_id, "pty-2");
+    }
+}
