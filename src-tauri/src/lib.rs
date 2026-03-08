@@ -89,7 +89,11 @@ pub fn run() {
                                 server.socket_path().display()
                             );
                             let state = app_handle.state::<AppState>();
-                            state.ipc_server.lock().unwrap().replace(server);
+                            state
+                                .ipc_server
+                                .lock()
+                                .expect("ipc_server mutex poisoned")
+                                .replace(server);
                         }
                         Err(e) => {
                             tracing::error!("Failed to start IPC server: {e}");
@@ -166,7 +170,12 @@ pub fn run() {
                 // Stop IPC server
                 #[cfg(unix)]
                 {
-                    if let Some(server) = state.ipc_server.lock().unwrap().take() {
+                    if let Some(server) = state
+                        .ipc_server
+                        .lock()
+                        .expect("ipc_server mutex poisoned")
+                        .take()
+                    {
                         tauri::async_runtime::block_on(async {
                             if let Err(e) = server.stop().await {
                                 tracing::error!("Failed to stop IPC server: {e}");

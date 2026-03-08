@@ -265,6 +265,54 @@ Include:
 4. Remaining risks/unknowns
 5. Next recommended action
 
-## 13) Rules
-- We should always do changes strongly tested using automated tests.
-- Always use TDD to ANY change.
+## 13) Test Trustworthiness Rules
+
+These rules exist because past audit failures proved each one necessary. Do not bypass them.
+
+### 13.1 No mock-only coverage
+
+- Every Tauri command in `commands.rs` MUST have a Rust-side integration test that exercises the real function, not just a mocked frontend test.
+- If you add or change a Tauri command, add a backend test. A frontend mock test alone is not sufficient.
+- Mocks are allowed for UI component isolation, but never as the sole proof that a feature works.
+
+### 13.2 Frontend tests must prove real behavior
+
+- Do not assert against mock return values you control. If your test passes because you wrote the mock to return exactly what you assert, the test proves nothing.
+- When mocking `tauriBridge`, verify the call arguments (command name, parameters) — not just that a canned value renders.
+
+### 13.3 No `unwrap()` in production Rust code
+
+- Use `?`, `.ok_or()`, `.unwrap_or_default()`, or explicit error handling instead.
+- `unwrap()` is allowed only in tests and build scripts.
+- `expect()` is allowed only when the invariant is genuinely impossible to violate and the message explains why.
+
+### 13.4 Every new user flow needs an E2E test
+
+- Before merging a feature that adds a user-facing flow (project open, pane split, settings change, etc.), add or extend a Playwright E2E spec in `e2e/`.
+- E2E tests must run against the real app, not mocked components.
+
+### 13.5 Bridge and backend must stay in sync
+
+- When changing a Tauri command signature, you MUST update in the same commit:
+  1. `src-tauri/src/commands.rs` (handler)
+  2. `src/lib/tauri-bridge.ts` (bridge call)
+  3. Frontend mock in `src/__mocks__/@tauri-apps/api/core.ts` or `src/lib/browser-mock.ts`
+  4. Tests on both sides
+- A contract test or type-check must catch drift. If it doesn't, add one.
+
+### 13.6 Async test discipline
+
+- Every `waitFor` call must have an explicit purpose. Do not wrap synchronous assertions in `waitFor`.
+- Prefer `findBy*` queries (which wait) over `getBy*` + `waitFor` wrappers.
+- Do not use arbitrary `setTimeout` delays in tests. If you need to wait, wait for a specific DOM change or event.
+
+### 13.7 Cross-platform paths must be tested
+
+- Any code that handles filesystem paths (WSL, Windows, Unix) must have test cases for each platform variant it claims to support.
+- Do not assume `/` paths work everywhere. Test with `\\`, `C:\`, and `/mnt/` inputs where relevant.
+
+### 13.8 TDD is mandatory
+
+- Write the failing test first, then implement.
+- If a bug is found, write a test that reproduces it before fixing.
+- No feature or fix is considered complete without its corresponding test.

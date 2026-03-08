@@ -293,7 +293,10 @@ impl WorkspaceState {
         }
 
         // Safe to proceed with mutations
-        let pane = self.panes.remove(pane_id).unwrap();
+        let pane = self
+            .panes
+            .remove(pane_id)
+            .expect("pane must exist in map after find_workspace_by_pane validation");
         let pty_id = pane.pty_id.clone();
 
         let workspace = &mut self.workspaces[ws_idx];

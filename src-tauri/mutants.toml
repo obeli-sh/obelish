@@ -1,0 +1,9 @@
+# cargo-mutants configuration for Obelisk
+# Target workspace state management and command handlers
+
+[examine]
+# Only mutate the core workspace logic and command handlers
+globs = [
+  "src/workspace/*.rs",
+  "src/commands.rs",
+]
