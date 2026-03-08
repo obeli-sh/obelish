@@ -27,6 +27,19 @@ impl IpcServer {
         let listener =
             tokio::net::UnixListener::bind(&socket_path).map_err(IpcError::BindFailed)?;
 
+        // Restrict socket to owner-only access
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| {
+                    IpcError::BindFailed(std::io::Error::new(
+                        e.kind(),
+                        format!("failed to set socket permissions: {e}"),
+                    ))
+                })?;
+        }
+
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let ctx = std::sync::Arc::new(context);
@@ -257,6 +270,27 @@ mod tests {
         let response = framing::read_response(&mut reader).await.unwrap();
         assert!(response.error.is_none());
         assert_eq!(response.id, json!(2));
+
+        server.stop().await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn socket_has_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = Arc::new(TempDir::new().unwrap());
+        let ctx = TestContext::new(temp_dir.clone());
+        let socket_path = ctx.socket_path_buf.clone();
+
+        let server = IpcServer::start(ctx, socket_path.clone()).await.unwrap();
+
+        let metadata = std::fs::metadata(&socket_path).unwrap();
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "Socket should have 0600 permissions, got {:o}",
+            mode
+        );
 
         server.stop().await.unwrap();
     }

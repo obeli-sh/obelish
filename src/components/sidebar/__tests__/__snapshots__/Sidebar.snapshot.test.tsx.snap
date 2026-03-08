@@ -1,0 +1,244 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Sidebar snapshots > matches snapshot with no workspaces 1`] = `
+<div>
+  <nav
+    class="panel"
+    style="display: flex; flex-direction: column; height: 100%; background-color: var(--ui-panel-bg-alt); color: var(--ui-text-primary); overflow: hidden;"
+  >
+    <ul
+      role="list"
+      style="list-style: none; margin: 0px; padding: 6px 0px; flex: 1 1 0%; overflow: auto;"
+    />
+    <div
+      id="DndDescribedBy-1"
+      style="display: none;"
+    >
+      
+    To pick up a draggable item, press the space bar.
+    While dragging, use the arrow keys to move the item.
+    Press space again to drop the item in its new position, or press escape to cancel.
+  
+    </div>
+    <div
+      aria-atomic="true"
+      aria-live="assertive"
+      id="DndLiveRegion-1"
+      role="status"
+      style="position: fixed; top: 0px; left: 0px; width: 1px; height: 1px; margin: -1px; border: 0px; padding: 0px; overflow: hidden; clip-path: inset(100%); white-space: nowrap;"
+    />
+    <div
+      style="border-top: 1px solid var(--ui-border); padding: 10px; display: flex; flex-direction: column; gap: 10px;"
+    >
+      <div
+        style="display: flex; gap: 10px; justify-content: flex-end;"
+      >
+        <button
+          aria-label="My Account"
+          disabled=""
+          style="width: 32px; height: 32px; padding: 0px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ui-radius); border: 1px solid var(--ui-border); background: var(--ui-panel-bg); color: var(--ui-text-primary); cursor: pointer;"
+        >
+          <svg
+            class="tabler-icon tabler-icon-user-circle "
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"
+            />
+            <path
+              d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"
+            />
+            <path
+              d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"
+            />
+          </svg>
+        </button>
+        <button
+          aria-label="Preferences"
+          style="width: 32px; height: 32px; padding: 0px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ui-radius); border: 1px solid var(--ui-border); background: var(--ui-panel-bg); color: var(--ui-text-primary); cursor: pointer;"
+        >
+          <svg
+            class="tabler-icon tabler-icon-settings "
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"
+            />
+            <path
+              d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+</div>
+`;
+
+exports[`Sidebar snapshots > matches snapshot with workspaces 1`] = `
+<div>
+  <nav
+    class="panel"
+    style="display: flex; flex-direction: column; height: 100%; background-color: var(--ui-panel-bg-alt); color: var(--ui-text-primary); overflow: hidden;"
+  >
+    <ul
+      role="list"
+      style="list-style: none; margin: 0px; padding: 6px 0px; flex: 1 1 0%; overflow: auto;"
+    >
+      <div>
+        <li
+          aria-describedby="DndDescribedBy-0"
+          aria-disabled="false"
+          aria-roledescription="sortable"
+          data-active="true"
+          data-focused="false"
+          style="padding: 6px 8px; cursor: pointer; margin: 0px 6px 6px; border-style: solid; border-width: 1px; border-color: var(--ui-accent); border-radius: var(--ui-radius); background: color-mix(in srgb, var(--ui-accent) 8%, transparent); opacity: 1;"
+          tabindex="0"
+        >
+          <div
+            style="display: flex; flex-direction: column;"
+          >
+            <div
+              style="display: flex; align-items: center; gap: 6px;"
+            >
+              <button
+                style="flex: 1 1 0%; background: none; color: inherit; text-align: left; cursor: pointer; padding: 4px 0px; font-family: var(--ui-font-mono); font-size: 12px; letter-spacing: 0.05em;"
+              >
+                Main
+              </button>
+              <button
+                aria-label="Close Main"
+                style="background: none; border: 1px solid transparent; color: inherit; cursor: pointer; padding: 2px 8px; font-size: 20px; font-family: var(--ui-font-mono); border-radius: var(--ui-radius); opacity: 0; visibility: hidden; transition: opacity 0.15s ease;"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </li>
+        <li
+          aria-describedby="DndDescribedBy-0"
+          aria-disabled="false"
+          aria-roledescription="sortable"
+          data-active="false"
+          data-focused="false"
+          style="padding: 6px 8px; cursor: pointer; margin: 0px 6px 6px; border-style: solid; border-width: 1px; border-color: transparent; border-radius: var(--ui-radius); background: rgba(255, 255, 255, 0.01); opacity: 1;"
+          tabindex="0"
+        >
+          <div
+            style="display: flex; flex-direction: column;"
+          >
+            <div
+              style="display: flex; align-items: center; gap: 6px;"
+            >
+              <button
+                style="flex: 1 1 0%; background: none; color: inherit; text-align: left; cursor: pointer; padding: 4px 0px; font-family: var(--ui-font-mono); font-size: 12px; letter-spacing: 0.05em;"
+              >
+                Dev
+              </button>
+              <button
+                aria-label="Close Dev"
+                style="background: none; border: 1px solid transparent; color: inherit; cursor: pointer; padding: 2px 8px; font-size: 20px; font-family: var(--ui-font-mono); border-radius: var(--ui-radius); opacity: 0; visibility: hidden; transition: opacity 0.15s ease;"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </li>
+      </div>
+    </ul>
+    <div
+      id="DndDescribedBy-0"
+      style="display: none;"
+    >
+      
+    To pick up a draggable item, press the space bar.
+    While dragging, use the arrow keys to move the item.
+    Press space again to drop the item in its new position, or press escape to cancel.
+  
+    </div>
+    <div
+      aria-atomic="true"
+      aria-live="assertive"
+      id="DndLiveRegion-0"
+      role="status"
+      style="position: fixed; top: 0px; left: 0px; width: 1px; height: 1px; margin: -1px; border: 0px; padding: 0px; overflow: hidden; clip-path: inset(100%); white-space: nowrap;"
+    />
+    <div
+      style="border-top: 1px solid var(--ui-border); padding: 10px; display: flex; flex-direction: column; gap: 10px;"
+    >
+      <div
+        style="display: flex; gap: 10px; justify-content: flex-end;"
+      >
+        <button
+          aria-label="My Account"
+          disabled=""
+          style="width: 32px; height: 32px; padding: 0px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ui-radius); border: 1px solid var(--ui-border); background: var(--ui-panel-bg); color: var(--ui-text-primary); cursor: pointer;"
+        >
+          <svg
+            class="tabler-icon tabler-icon-user-circle "
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"
+            />
+            <path
+              d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"
+            />
+            <path
+              d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855"
+            />
+          </svg>
+        </button>
+        <button
+          aria-label="Preferences"
+          style="width: 32px; height: 32px; padding: 0px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--ui-radius); border: 1px solid var(--ui-border); background: var(--ui-panel-bg); color: var(--ui-text-primary); cursor: pointer;"
+        >
+          <svg
+            class="tabler-icon tabler-icon-settings "
+            fill="none"
+            height="16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"
+            />
+            <path
+              d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+</div>
+`;

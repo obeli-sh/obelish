@@ -75,6 +75,13 @@ jobs:
           name: rust-coverage
           path: coverage/
           retention-days: 14
+      - name: Upload Rust coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/cobertura.xml
+          flags: rust
+          fail_ci_if_error: false
 
   frontend-check:
     strategy:
@@ -110,6 +117,13 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 14
+      - name: Upload frontend coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
 
   e2e-playwright:
     runs-on: ubuntu-latest

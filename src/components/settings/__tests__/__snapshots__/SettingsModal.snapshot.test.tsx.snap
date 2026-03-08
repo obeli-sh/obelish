@@ -1,0 +1,24 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SettingsModal snapshots > matches snapshot when closed 1`] = `<div />`;
+
+exports[`SettingsModal snapshots > matches snapshot when open 1`] = `
+<div>
+  <div
+    data-testid="settings-backdrop"
+    style="position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;"
+  >
+    <div
+      aria-label="Settings"
+      aria-modal="true"
+      class="panel"
+      role="dialog"
+      style="width: 100%; max-width: 960px; max-height: 80vh; background-color: var(--ui-panel-bg); border: 1px solid var(--ui-border); border-radius: var(--ui-radius); overflow: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); padding: 24px;"
+    >
+      <div>
+        Settings Content
+      </div>
+    </div>
+  </div>
+</div>
+`;

@@ -83,4 +83,37 @@ describe('fuzzySearchCommands', () => {
     const results = fuzzySearchCommands([], 'test');
     expect(results).toHaveLength(0);
   });
+
+  it('returns all commands for whitespace-only query', () => {
+    const results = fuzzySearchCommands(testCommands, '   ');
+    expect(results).toHaveLength(testCommands.length);
+  });
+
+  it('returns all commands for tab-only query', () => {
+    const results = fuzzySearchCommands(testCommands, '\t');
+    expect(results).toHaveLength(testCommands.length);
+  });
+
+  it('returns the original commands array reference for empty query', () => {
+    const results = fuzzySearchCommands(testCommands, '');
+    expect(results).toBe(testCommands);
+  });
+
+  it('returns new array (not original) for non-empty query with results', () => {
+    const results = fuzzySearchCommands(testCommands, 'Split');
+    expect(results).not.toBe(testCommands);
+  });
+
+  it('maps fuse results to command items (not fuse result wrappers)', () => {
+    const results = fuzzySearchCommands(testCommands, 'Close Pane');
+    expect(results[0]).toHaveProperty('id');
+    expect(results[0]).toHaveProperty('execute');
+    expect(results[0]).not.toHaveProperty('score');
+    expect(results[0]).not.toHaveProperty('item');
+  });
+
+  it('returns empty for query that does not match any field', () => {
+    const results = fuzzySearchCommands(testCommands, 'zzzzz99999');
+    expect(results).toHaveLength(0);
+  });
 });

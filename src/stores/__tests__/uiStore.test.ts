@@ -230,6 +230,69 @@ describe('uiStore', () => {
       useUiStore.getState().focusAdjacentPane('up');
       expect(useUiStore.getState().focusedPaneId).toBe('pane-1');
     });
+
+    it('does nothing when focused pane is not in the layout', () => {
+      const layout = makeSplit('horizontal', makeLeaf('pane-1'), makeLeaf('pane-2'));
+      setupLayout(layout);
+      useUiStore.getState().setFocusedPane('pane-unknown');
+
+      useUiStore.getState().focusAdjacentPane('right');
+      expect(useUiStore.getState().focusedPaneId).toBe('pane-unknown');
+    });
+
+    it('navigates left from right child in horizontal split to leftmost leaf of left subtree', () => {
+      // Horizontal split: left=[pane-1 / pane-2 vertical], right=[pane-3]
+      const leftSplit = makeSplit('vertical', makeLeaf('pane-1'), makeLeaf('pane-2'));
+      const layout = makeSplit('horizontal', leftSplit, makeLeaf('pane-3'));
+      setupLayout(layout);
+
+      useUiStore.getState().setFocusedPane('pane-3');
+      useUiStore.getState().focusAdjacentPane('left');
+      // Should enter left subtree and pick the last leaf (pane-2) since going left means entering at index 1
+      expect(useUiStore.getState().focusedPaneId).toBe('pane-2');
+    });
+
+    it('single leaf layout: navigation in all directions does nothing', () => {
+      const layout = makeLeaf('pane-only');
+      setupLayout(layout);
+      useUiStore.getState().setFocusedPane('pane-only');
+
+      for (const dir of ['up', 'down', 'left', 'right'] as const) {
+        useUiStore.getState().focusAdjacentPane(dir);
+        expect(useUiStore.getState().focusedPaneId).toBe('pane-only');
+      }
+    });
+
+    it('does not navigate right when already at rightmost pane', () => {
+      const layout = makeSplit('horizontal', makeLeaf('pane-1'), makeLeaf('pane-2'));
+      setupLayout(layout);
+      useUiStore.getState().setFocusedPane('pane-2');
+
+      useUiStore.getState().focusAdjacentPane('right');
+      expect(useUiStore.getState().focusedPaneId).toBe('pane-2');
+    });
+
+    it('does not navigate down when already at bottom pane', () => {
+      const layout = makeSplit('vertical', makeLeaf('pane-1'), makeLeaf('pane-2'));
+      setupLayout(layout);
+      useUiStore.getState().setFocusedPane('pane-2');
+
+      useUiStore.getState().focusAdjacentPane('down');
+      expect(useUiStore.getState().focusedPaneId).toBe('pane-2');
+    });
+  });
+
+  describe('setProjectPickerOpen', () => {
+    it('sets projectPickerOpen to true', () => {
+      useUiStore.getState().setProjectPickerOpen(true);
+      expect(useUiStore.getState().projectPickerOpen).toBe(true);
+    });
+
+    it('sets projectPickerOpen to false', () => {
+      useUiStore.getState().setProjectPickerOpen(true);
+      useUiStore.getState().setProjectPickerOpen(false);
+      expect(useUiStore.getState().projectPickerOpen).toBe(false);
+    });
   });
 
   describe('focusedPaneDimensions', () => {

@@ -1,0 +1,113 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`NotificationPanel snapshots > matches snapshot with empty state 1`] = `
+<div>
+  <div
+    class="panel"
+    data-testid="notification-panel"
+    style="width: 320px; height: 100%; background-color: var(--ui-panel-bg); border-left: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
+  >
+    <div
+      style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--ui-border);"
+    >
+      <span
+        style="color: var(--ui-text-muted); font-family: var(--ui-font-mono); letter-spacing: 0.08em; font-size: 11px;"
+      >
+        Notifications
+      </span>
+      <button
+        aria-label="Close"
+        style="background: none; border: 1px solid transparent; color: var(--ui-text-primary); cursor: pointer; font-size: 15px; padding: 2px 8px; font-family: var(--ui-font-mono); border-radius: var(--ui-radius);"
+      >
+        ×
+      </button>
+    </div>
+    <div
+      style="flex: 1 1 0%; overflow: auto;"
+    >
+      <div
+        style="padding: 24px; text-align: center; color: var(--ui-text-muted); font-size: 13px;"
+      >
+        No notifications
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`NotificationPanel snapshots > matches snapshot with notifications 1`] = `
+<div>
+  <div
+    class="panel"
+    data-testid="notification-panel"
+    style="width: 320px; height: 100%; background-color: var(--ui-panel-bg); border-left: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
+  >
+    <div
+      style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--ui-border);"
+    >
+      <span
+        style="color: var(--ui-text-muted); font-family: var(--ui-font-mono); letter-spacing: 0.08em; font-size: 11px;"
+      >
+        Notifications
+      </span>
+      <button
+        aria-label="Close"
+        style="background: none; border: 1px solid transparent; color: var(--ui-text-primary); cursor: pointer; font-size: 15px; padding: 2px 8px; font-family: var(--ui-font-mono); border-radius: var(--ui-radius);"
+      >
+        ×
+      </button>
+    </div>
+    <div
+      style="flex: 1 1 0%; overflow: auto;"
+    >
+      <div
+        data-read="false"
+        style="padding: 10px 12px; border-bottom: 1px solid var(--ui-border);"
+      >
+        <div
+          style="color: var(--ui-text-primary); font-size: 13px; font-family: var(--ui-font-mono); letter-spacing: 0.04em;"
+        >
+          Build complete
+        </div>
+        <div
+          style="display: flex; justify-content: space-between; color: var(--ui-text-muted); font-size: 11px; margin-top: 4px; font-family: var(--ui-font-mono);"
+        >
+          <span>
+            844d ago
+          </span>
+          <span>
+            pane: 
+            pane-1
+          </span>
+        </div>
+      </div>
+      <div
+        data-read="false"
+        style="padding: 10px 12px; border-bottom: 1px solid var(--ui-border);"
+      >
+        <div
+          style="color: var(--ui-text-primary); font-size: 13px; font-family: var(--ui-font-mono); letter-spacing: 0.04em;"
+        >
+          Tests passed
+        </div>
+        <div
+          style="color: var(--ui-text-muted); font-size: 12px; margin-top: 4px;"
+        >
+          All 100 tests passed
+        </div>
+        <div
+          style="display: flex; justify-content: space-between; color: var(--ui-text-muted); font-size: 11px; margin-top: 4px; font-family: var(--ui-font-mono);"
+        >
+          <span>
+            844d ago
+          </span>
+          <span>
+            pane: 
+            pane-1
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;

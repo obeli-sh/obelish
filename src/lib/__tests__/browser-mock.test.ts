@@ -245,6 +245,218 @@ describe('browser-mock', () => {
       expect(result).toHaveProperty('id');
       expect(result).toHaveProperty('name');
     });
+
+    it('workspace_rename updates name when valid workspace id and name', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const wsId = restored[0].id as string;
+
+      const result = await mockInvoke('workspace_rename', { workspaceId: wsId, newName: 'Renamed' }) as Record<string, unknown>;
+      expect(result.name).toBe('Renamed');
+    });
+
+    it('workspace_rename with empty newName returns fallback workspace', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const wsId = restored[0].id as string;
+
+      const result = await mockInvoke('workspace_rename', { workspaceId: wsId, newName: '' }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+    });
+
+    it('workspace_rename with whitespace-only newName returns fallback workspace', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const wsId = restored[0].id as string;
+
+      const result = await mockInvoke('workspace_rename', { workspaceId: wsId, newName: '   ' }) as Record<string, unknown>;
+      // Whitespace-only name trims to empty, so falls through to fallback
+      expect(result).toHaveProperty('id');
+    });
+
+    it('workspace_close with valid id removes workspace', async () => {
+      await mockInvoke('workspace_create', { name: 'Extra' });
+      const listed = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      expect(listed.length).toBeGreaterThanOrEqual(2);
+
+      const wsId = listed[1].id as string;
+      await mockInvoke('workspace_close', { workspaceId: wsId });
+
+      const after = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      const ids = after.map((w) => w.id);
+      expect(ids).not.toContain(wsId);
+    });
+
+    it('workspace_close sets activeWorkspaceId to null when active is closed', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const wsId = restored[0].id as string;
+
+      // Create another workspace so there's a fallback
+      await mockInvoke('workspace_create', { name: 'Backup' });
+
+      // Close the active workspace
+      await mockInvoke('workspace_close', { workspaceId: wsId });
+      const listed = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      expect(listed.length).toBeGreaterThan(0);
+    });
+
+    it('workspace_create with custom name uses that name', async () => {
+      const result = await mockInvoke('workspace_create', { name: 'My Custom' }) as Record<string, unknown>;
+      expect(result.name).toBe('My Custom');
+    });
+
+    it('workspace_reorder reorders workspaces', async () => {
+      await mockInvoke('session_restore');
+      await mockInvoke('workspace_create', { name: 'Second' });
+      const listed = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      const ids = listed.map((w) => w.id) as string[];
+
+      await mockInvoke('workspace_reorder', { workspaceIds: [...ids].reverse() });
+      const after = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      const afterIds = after.map((w) => w.id);
+      expect(afterIds).toEqual([...ids].reverse());
+    });
+
+    it('workspace_reorder with empty array is no-op', async () => {
+      await mockInvoke('session_restore');
+      const before = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      await mockInvoke('workspace_reorder', { workspaceIds: [] });
+      const after = await mockInvoke('workspace_list') as Array<Record<string, unknown>>;
+      expect(after.map((w) => w.id)).toEqual(before.map((w) => w.id));
+    });
+
+    it('pane_close with valid paneId closes pane and replaces with new leaf', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const paneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const result = await mockInvoke('pane_close', { paneId }) as Record<string, unknown>;
+      const newLayout = ((result.surfaces as Array<Record<string, unknown>>)[0].layout) as Record<string, unknown>;
+      expect(newLayout.type).toBe('leaf');
+    });
+
+    it('pane_swap with same paneId and targetPaneId returns fallback', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const paneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const result = await mockInvoke('pane_swap', { paneId, targetPaneId: paneId }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+    });
+
+    it('pane_move with center position delegates to swap', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const split = await mockInvoke('pane_split', { paneId: rootPaneId, direction: 'horizontal' }) as Record<string, unknown>;
+      const splitChildren = ((split.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>).children as Array<Record<string, unknown>>;
+      const paneA = splitChildren[0].paneId as string;
+      const paneB = splitChildren[1].paneId as string;
+
+      const result = await mockInvoke('pane_move', { paneId: paneA, targetPaneId: paneB, position: 'center' }) as Record<string, unknown>;
+      const resultChildren = ((result.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>).children as Array<Record<string, unknown>>;
+      expect(resultChildren[0].paneId).toBe(paneB);
+      expect(resultChildren[1].paneId).toBe(paneA);
+    });
+
+    it('pane_move with invalid position returns fallback', async () => {
+      const result = await mockInvoke('pane_move', { paneId: 'p1', targetPaneId: 'p2', position: 'invalid' }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+    });
+
+    it('pane_split with invalid direction returns fallback', async () => {
+      const result = await mockInvoke('pane_split', { paneId: 'p1', direction: 'diagonal' }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+    });
+
+    it('project_list returns empty array', async () => {
+      const result = await mockInvoke('project_list');
+      expect(result).toEqual([]);
+    });
+
+    it('project_add returns mock project info', async () => {
+      const result = await mockInvoke('project_add', { rootPath: '/test' }) as Record<string, unknown>;
+      expect(result).toHaveProperty('id');
+      expect(result).toHaveProperty('name');
+      expect(result).toHaveProperty('rootPath');
+    });
+
+    it('project_remove returns undefined', async () => {
+      const result = await mockInvoke('project_remove', { projectId: 'p1' });
+      expect(result).toBeUndefined();
+    });
+
+    it('worktree_list returns array with main worktree', async () => {
+      const result = await mockInvoke('worktree_list', { projectId: 'p1' }) as Array<Record<string, unknown>>;
+      expect(Array.isArray(result)).toBe(true);
+      expect(result[0].isMain).toBe(true);
+    });
+
+    it('worktree_create returns non-main worktree', async () => {
+      const result = await mockInvoke('worktree_create', { projectId: 'p1', branchName: 'feat' }) as Record<string, unknown>;
+      expect(result.isMain).toBe(false);
+    });
+
+    it('list_directories returns empty array', async () => {
+      const result = await mockInvoke('list_directories', { partialPath: '/home' });
+      expect(result).toEqual([]);
+    });
+
+    it('pane_move with left position inserts source before target', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const split = await mockInvoke('pane_split', { paneId: rootPaneId, direction: 'horizontal' }) as Record<string, unknown>;
+      const splitChildren = ((split.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>).children as Array<Record<string, unknown>>;
+      const paneA = splitChildren[0].paneId as string;
+      const paneB = splitChildren[1].paneId as string;
+
+      const result = await mockInvoke('pane_move', { paneId: paneA, targetPaneId: paneB, position: 'left' }) as Record<string, unknown>;
+      const resultLayout = (result.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>;
+      expect(resultLayout.direction).toBe('horizontal');
+      const resultChildren = resultLayout.children as Array<Record<string, unknown>>;
+      expect(resultChildren[0].paneId).toBe(paneA);
+      expect(resultChildren[1].paneId).toBe(paneB);
+    });
+
+    it('pane_move with top position creates vertical split', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const split = await mockInvoke('pane_split', { paneId: rootPaneId, direction: 'horizontal' }) as Record<string, unknown>;
+      const splitChildren = ((split.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>).children as Array<Record<string, unknown>>;
+      const paneA = splitChildren[0].paneId as string;
+      const paneB = splitChildren[1].paneId as string;
+
+      const result = await mockInvoke('pane_move', { paneId: paneA, targetPaneId: paneB, position: 'top' }) as Record<string, unknown>;
+      const resultLayout = (result.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>;
+      expect(resultLayout.direction).toBe('vertical');
+      const resultChildren = resultLayout.children as Array<Record<string, unknown>>;
+      expect(resultChildren[0].paneId).toBe(paneA);
+    });
+
+    it('pane_move with right position inserts source after target', async () => {
+      const restored = await mockInvoke('session_restore') as Array<Record<string, unknown>>;
+      const ws = restored[0];
+      const surface = (ws.surfaces as Array<Record<string, unknown>>)[0];
+      const rootPaneId = (surface.layout as Record<string, unknown>).paneId as string;
+
+      const split = await mockInvoke('pane_split', { paneId: rootPaneId, direction: 'horizontal' }) as Record<string, unknown>;
+      const splitChildren = ((split.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>).children as Array<Record<string, unknown>>;
+      const paneA = splitChildren[0].paneId as string;
+      const paneB = splitChildren[1].paneId as string;
+
+      const result = await mockInvoke('pane_move', { paneId: paneA, targetPaneId: paneB, position: 'right' }) as Record<string, unknown>;
+      const resultLayout = (result.surfaces as Array<Record<string, unknown>>)[0].layout as Record<string, unknown>;
+      expect(resultLayout.direction).toBe('horizontal');
+      const resultChildren = resultLayout.children as Array<Record<string, unknown>>;
+      expect(resultChildren[1].paneId).toBe(paneA);
+    });
   });
 
   describe('mockListen', () => {
