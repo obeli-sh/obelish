@@ -29,11 +29,26 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
+  snapshotDir: './e2e/visual/__snapshots__',
+  snapshotPathTemplate: '{snapshotDir}/{arg}{ext}',
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+      threshold: 0.2,
+      animations: 'disabled',
+    },
+  },
   projects: [
     {
       name: 'chromium',
       use: {
         browserName: 'chromium',
+      },
+    },
+    {
+      name: 'firefox',
+      use: {
+        browserName: 'firefox',
       },
     },
   ],

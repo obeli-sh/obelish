@@ -24,9 +24,7 @@ describe('ShellSelector', () => {
   it('renders a radiogroup with shell options', async () => {
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     // Auto-detect + 3 shells = 4 radio options
     const radios = screen.getAllByRole('radio');
@@ -36,9 +34,7 @@ describe('ShellSelector', () => {
   it('shows Auto-detect as first option', async () => {
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     const radios = screen.getAllByRole('radio');
     expect(radios[0]).toHaveAccessibleName(/auto-detect/i);
@@ -47,9 +43,7 @@ describe('ShellSelector', () => {
   it('lists each discovered shell with name and path', async () => {
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     expect(screen.getByText('Bash')).toBeInTheDocument();
     expect(screen.getByText('/bin/bash')).toBeInTheDocument();
@@ -63,9 +57,7 @@ describe('ShellSelector', () => {
     useSettingsStore.setState({ defaultShell: '/usr/bin/zsh' });
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     const zshRadio = screen.getByRole('radio', { name: /zsh/i });
     expect(zshRadio).toBeChecked();
@@ -75,9 +67,7 @@ describe('ShellSelector', () => {
     useSettingsStore.setState({ defaultShell: '' });
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     const autoRadio = screen.getByRole('radio', { name: /auto-detect/i });
     expect(autoRadio).toBeChecked();
@@ -87,9 +77,7 @@ describe('ShellSelector', () => {
     const user = userEvent.setup();
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     await user.click(screen.getByText('Fish'));
 
@@ -99,18 +87,14 @@ describe('ShellSelector', () => {
   it('renders a label for the group', async () => {
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Default Shell')).toBeInTheDocument();
-    });
+    await screen.findByText('Default Shell');
   });
 
   it('handles empty shell list gracefully', async () => {
     mockInvoke('shell_list', () => Promise.resolve([]));
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     // Only Auto-detect option
     const radios = screen.getAllByRole('radio');
@@ -121,9 +105,7 @@ describe('ShellSelector', () => {
     mockInvoke('shell_list', () => Promise.reject(new Error('backend error')));
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     // Only Auto-detect option on error
     const radios = screen.getAllByRole('radio');
@@ -135,9 +117,7 @@ describe('ShellSelector', () => {
     const user = userEvent.setup();
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     expect(screen.getByRole('radio', { name: /bash/i })).toBeChecked();
 
@@ -151,9 +131,7 @@ describe('ShellSelector', () => {
     useSettingsStore.setState({ defaultShell: '/usr/bin/zsh' });
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     // The selected option should have a visible checkmark
     const zshOption = screen.getByRole('radio', { name: /zsh/i }).closest('[data-shell-option]');
@@ -164,9 +142,7 @@ describe('ShellSelector', () => {
     useSettingsStore.setState({ defaultShell: '/missing/shell' });
     render(<ShellSelector />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup')).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup');
 
     await waitFor(() => {
       expect(screen.getByRole('radio', { name: /auto-detect/i })).toBeChecked();

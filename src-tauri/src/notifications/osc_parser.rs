@@ -581,4 +581,82 @@ mod tests {
         let (_, _, cwd) = parser.feed(input);
         assert_eq!(cwd, Some("/".to_string()));
     }
+
+    // --- Property-based tests ---
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(1000))]
+            #[test]
+            fn random_bytes_never_panic(data in proptest::collection::vec(any::<u8>(), 0..1024)) {
+                let mut parser = OscParser::new();
+                let _ = parser.feed(&data);
+            }
+
+            #[test]
+            fn forwarded_len_always_equals_input_len(data in proptest::collection::vec(any::<u8>(), 0..1024)) {
+                let mut parser = OscParser::new();
+                let (forwarded, _, _) = parser.feed(&data);
+                prop_assert_eq!(forwarded.len(), data.len());
+            }
+
+            #[test]
+            fn complete_osc_returns_to_normal(
+                code in 0u32..1000,
+                payload in "[a-zA-Z0-9 ]{0,100}"
+            ) {
+                let mut parser = OscParser::new();
+                // Build a complete OSC sequence: ESC ] code ; payload BEL
+                let input = format!("\x1b]{code};{payload}\x07");
+                let _ = parser.feed(input.as_bytes());
+
+                // After feeding a complete sequence, the parser should accept normal text
+                let (forwarded, notifications, _) = parser.feed(b"normal text");
+                prop_assert_eq!(&forwarded, b"normal text");
+                prop_assert!(notifications.is_empty());
+            }
+
+            #[test]
+            fn split_input_produces_same_notifications(
+                data in proptest::collection::vec(any::<u8>(), 1..512),
+                split_point in 0usize..512
+            ) {
+                let split_point = split_point % data.len();
+
+                // Feed all at once
+                let mut parser_whole = OscParser::new();
+                let (_, notifs_whole, _) = parser_whole.feed(&data);
+
+                // Feed in two parts
+                let mut parser_split = OscParser::new();
+                let (_, notifs1, _) = parser_split.feed(&data[..split_point]);
+                let (_, notifs2, _) = parser_split.feed(&data[split_point..]);
+
+                let mut notifs_combined = notifs1;
+                notifs_combined.extend(notifs2);
+
+                prop_assert_eq!(notifs_whole.len(), notifs_combined.len());
+                for (a, b) in notifs_whole.iter().zip(notifs_combined.iter()) {
+                    prop_assert_eq!(a, b);
+                }
+            }
+
+            #[test]
+            fn split_input_total_forwarded_equals_input_len(
+                data in proptest::collection::vec(any::<u8>(), 1..512),
+                split_point in 0usize..512
+            ) {
+                let split_point = split_point % data.len();
+
+                let mut parser = OscParser::new();
+                let (fwd1, _, _) = parser.feed(&data[..split_point]);
+                let (fwd2, _, _) = parser.feed(&data[split_point..]);
+
+                prop_assert_eq!(fwd1.len() + fwd2.len(), data.len());
+            }
+        }
+    }
 }

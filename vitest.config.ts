@@ -8,8 +8,9 @@ export default defineConfig({
     environment: "jsdom",
     pool: "vmThreads",
     globals: true,
-    passWithNoTests: true,
+    passWithNoTests: false,
     setupFiles: ["./src/test-setup.ts"],
+    exclude: ["e2e/**", ".stryker-tmp/**", "node_modules/**"],
     alias: {
       "@tauri-apps/api/core": path.resolve(
         __dirname,

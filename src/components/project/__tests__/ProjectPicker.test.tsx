@@ -90,6 +90,7 @@ describe('ProjectPicker', () => {
         isMain: true,
       });
     });
+    expect(mockWorktreeList).toHaveBeenCalledWith('proj-1');
   });
 
   it('expands inline worktrees for multi-worktree projects', async () => {
@@ -106,10 +107,8 @@ describe('ProjectPicker', () => {
       />,
     );
     await userEvent.click(screen.getByText('my-project'));
-    await waitFor(() => {
-      expect(screen.getByText(/main \(root\)/)).toBeInTheDocument();
-      expect(screen.getByText('feat')).toBeInTheDocument();
-    });
+    await screen.findByText(/main \(root\)/);
+    expect(screen.getByText('feat')).toBeInTheDocument();
   });
 
   it('calls onProjectAdd when folder path submitted', async () => {
@@ -252,10 +251,8 @@ describe('ProjectPicker', () => {
         expect(mockListDirectories).toHaveBeenCalledWith('/home/user/p', false);
       });
 
-      await waitFor(() => {
-        expect(screen.getByText('projects')).toBeInTheDocument();
-        expect(screen.getByText('pictures')).toBeInTheDocument();
-      });
+      await screen.findByText('projects');
+      expect(screen.getByText('pictures')).toBeInTheDocument();
     });
 
     it('selects suggestion on click and appends separator', async () => {
@@ -272,9 +269,7 @@ describe('ProjectPicker', () => {
       const input = screen.getByPlaceholderText(/enter folder path/i);
       await userEvent.type(input, '/home/user/p');
 
-      await waitFor(() => {
-        expect(screen.getByText('projects')).toBeInTheDocument();
-      });
+      await screen.findByText('projects');
 
       // mouseDown on suggestion (the component uses onMouseDown to prevent blur)
       const suggestion = screen.getByText('projects');
@@ -318,15 +313,141 @@ describe('ProjectPicker', () => {
       const input = screen.getByPlaceholderText(/enter folder path/i);
       await userEvent.type(input, '/home/user/');
 
-      await waitFor(() => {
-        expect(screen.getByText('alpha')).toBeInTheDocument();
-      });
+      await screen.findByText('alpha');
 
       // Arrow down to select first suggestion, then Enter to pick it
       await userEvent.keyboard('{ArrowDown}');
       await userEvent.keyboard('{Enter}');
 
       expect(input).toHaveValue('/home/user/alpha/');
+    });
+  });
+
+  describe('hashString consistency and distribution', () => {
+    // Replicate the hashString function from ProjectPicker.tsx for direct testing
+    // (it is not exported, so we duplicate the logic here)
+    function hashString(str: string): number {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+      }
+      return Math.abs(hash);
+    }
+
+    it('produces consistent output for the same input', () => {
+      const input = 'my-project';
+      const result1 = hashString(input);
+      const result2 = hashString(input);
+      const result3 = hashString(input);
+      expect(result1).toBe(result2);
+      expect(result2).toBe(result3);
+    });
+
+    it('produces different outputs for different inputs (10 distinct strings)', () => {
+      const inputs = [
+        'alpha', 'beta', 'gamma', 'delta', 'epsilon',
+        'zeta', 'eta', 'theta', 'iota', 'kappa',
+      ];
+      const hashes = inputs.map((s) => hashString(s));
+      const uniqueHashes = new Set(hashes);
+      // All 10 inputs should map to distinct hash values
+      expect(uniqueHashes.size).toBe(10);
+    });
+
+    it('returns a non-negative number', () => {
+      const inputs = ['', 'a', 'test', '/', '/mnt/c/Users'];
+      for (const input of inputs) {
+        expect(hashString(input)).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('handles empty string', () => {
+      expect(hashString('')).toBe(0);
+    });
+  });
+
+  describe('WSL path detection', () => {
+    // Replicate the path detection functions from ProjectPicker.tsx
+    function isWslPath(path: string): boolean {
+      if (path.startsWith('\\\\wsl')) return true;
+      return path.startsWith('/') && !path.startsWith('//');
+    }
+
+    function isWindowsPath(path: string): boolean {
+      if (/^[a-zA-Z]:[\\/]/.test(path)) return true;
+      if (path.startsWith('\\\\') && !path.startsWith('\\\\wsl')) return true;
+      return false;
+    }
+
+    it('detects Unix-style paths as WSL paths', () => {
+      expect(isWslPath('/home/user/project')).toBe(true);
+      expect(isWslPath('/mnt/c/Users/project')).toBe(true);
+    });
+
+    it('detects \\\\wsl prefix as WSL path', () => {
+      expect(isWslPath('\\\\wsl$\\Ubuntu\\home\\user')).toBe(true);
+      expect(isWslPath('\\\\wsl.localhost\\Ubuntu\\home')).toBe(true);
+    });
+
+    it('does not classify UNC paths (non-wsl) as WSL paths', () => {
+      expect(isWslPath('\\\\server\\share')).toBe(false);
+    });
+
+    it('does not classify double-slash paths as WSL paths', () => {
+      expect(isWslPath('//network/share')).toBe(false);
+    });
+
+    it('detects Windows drive letter paths', () => {
+      expect(isWindowsPath('C:\\Users\\project')).toBe(true);
+      expect(isWindowsPath('D:/Projects/app')).toBe(true);
+    });
+
+    it('detects UNC paths as Windows paths (but not \\\\wsl)', () => {
+      expect(isWindowsPath('\\\\server\\share')).toBe(true);
+      expect(isWindowsPath('\\\\wsl$\\Ubuntu')).toBe(false);
+    });
+
+    it('does not classify Unix paths as Windows paths', () => {
+      expect(isWindowsPath('/home/user')).toBe(false);
+    });
+  });
+
+  describe('empty/null project list edge cases', () => {
+    it('renders without crashing with empty projects array', () => {
+      const { container } = render(
+        <ProjectPicker
+          projects={[]}
+          onOpenProject={vi.fn()}
+          onProjectAdd={vi.fn().mockResolvedValue(null)}
+        />,
+      );
+      expect(container).toBeTruthy();
+    });
+
+    it('shows the dialog with proper structure even with no projects', () => {
+      render(
+        <ProjectPicker
+          projects={[]}
+          onOpenProject={vi.fn()}
+          onProjectAdd={vi.fn().mockResolvedValue(null)}
+        />,
+      );
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/enter folder path/i)).toBeInTheDocument();
+    });
+
+    it('still allows adding a project when the list is empty', async () => {
+      const onAdd = vi.fn().mockResolvedValue(null);
+      render(
+        <ProjectPicker
+          projects={[]}
+          onOpenProject={vi.fn()}
+          onProjectAdd={onAdd}
+        />,
+      );
+      const input = screen.getByPlaceholderText(/enter folder path/i);
+      await userEvent.type(input, '/new/project{Enter}');
+      expect(onAdd).toHaveBeenCalledWith('/new/project');
     });
   });
 });

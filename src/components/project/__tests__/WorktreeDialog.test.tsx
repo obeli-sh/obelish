@@ -55,10 +55,8 @@ describe('WorktreeDialog', () => {
         onClose={vi.fn()}
       />
     );
-    await waitFor(() => {
-      expect(screen.getByText(/main \(root\)/)).toBeInTheDocument();
-      expect(screen.getByText('feat')).toBeInTheDocument();
-    });
+    await screen.findByText(/main \(root\)/);
+    expect(screen.getByText('feat')).toBeInTheDocument();
   });
 
   it('calls onSelect when worktree clicked', async () => {
@@ -72,7 +70,7 @@ describe('WorktreeDialog', () => {
         onClose={vi.fn()}
       />
     );
-    await waitFor(() => screen.getByText(/main \(root\)/));
+    await screen.findByText(/main \(root\)/);
     await userEvent.click(screen.getByText(/main \(root\)/));
     expect(onSelect).toHaveBeenCalledWith({
       path: '/repo',
@@ -92,7 +90,7 @@ describe('WorktreeDialog', () => {
         onClose={vi.fn()}
       />
     );
-    await waitFor(() => screen.getByText(/main \(root\)/));
+    await screen.findByText(/main \(root\)/);
 
     const input = screen.getByPlaceholderText(/branch name/i);
     await userEvent.type(input, 'new-branch');
@@ -119,7 +117,7 @@ describe('WorktreeDialog', () => {
         onClose={onClose}
       />
     );
-    await waitFor(() => screen.getByText(/select worktree/i));
+    await screen.findByText(/select worktree/i);
     // Click the overlay (the outermost div)
     const overlay = screen.getByText(/select worktree/i).closest('div[style]')?.parentElement?.parentElement;
     if (overlay) {

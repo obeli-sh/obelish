@@ -1,0 +1,19 @@
+# cargo-mutants configuration for targeted mutation testing
+# Run with: just mutants
+# Install: cargo install cargo-mutants
+
+# Only mutate high-value modules
+examine_re = [
+  "src/workspace/",
+  "src/commands\\.rs",
+]
+
+# Skip test helpers and generated code
+exclude_re = [
+  "tests/",
+  "benches/",
+  "bindings/",
+]
+
+# Timeout per mutant (seconds)
+timeout = 120

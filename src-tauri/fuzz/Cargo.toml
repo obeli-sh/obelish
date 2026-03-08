@@ -1,0 +1,29 @@
+[package]
+name = "obelisk-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.obelisk_lib]
+path = ".."
+
+[[bin]]
+name = "fuzz_osc_parser"
+path = "fuzz_targets/fuzz_osc_parser.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_ports_parser"
+path = "fuzz_targets/fuzz_ports_parser.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_git_parser"
+path = "fuzz_targets/fuzz_git_parser.rs"
+doc = false

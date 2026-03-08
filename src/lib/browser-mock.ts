@@ -445,7 +445,7 @@ const handlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
       surface.layout = closed.layout ?? mockRuntime.createTerminalLeaf();
     }
     mockRuntime.state.activeWorkspaceId = workspace.id;
-    return undefined;
+    return deepClone(workspace);
   },
   pane_open_browser: (args) => {
     const paneId = typeof args?.paneId === 'string' ? args.paneId : null;
@@ -572,6 +572,7 @@ const handlers: Record<string, (args?: Record<string, unknown>) => unknown> = {
 export async function mockInvoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
   const handler = handlers[cmd];
   if (handler) return handler(args);
+  console.warn(`[browser-mock] unregistered command invoked: "${cmd}". Add a handler to browser-mock.ts.`);
   return undefined;
 }
 

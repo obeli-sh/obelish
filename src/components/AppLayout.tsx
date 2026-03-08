@@ -83,6 +83,7 @@ export function AppLayout() {
   const keybindings = useSettingsStore((s) => s.keybindings);
   const updateKeybinding = useSettingsStore((s) => s.updateKeybinding);
   const resetKeybinding = useSettingsStore((s) => s.resetKeybinding);
+  const showAllProjects = useSettingsStore((s) => s.showAllProjects);
 
   const commands = getCommands();
 
@@ -366,6 +367,10 @@ export function AppLayout() {
       useWorkspaceStore.getState()._removePaneName(paneId);
       useWorkspaceStore.getState()._removeBrowserPaneUrl(paneId);
 
+      // Re-sync workspace state after close so the UI reflects the updated layout
+      const list = await tauriBridge.session.restore();
+      for (const w of list) useWorkspaceStore.getState()._syncWorkspace(w);
+
       // Focus the first pane in the updated active workspace (if any)
       const ws = useWorkspaceStore.getState().getActiveWorkspace();
       if (ws && ws.surfaces.length > 0) {
@@ -504,8 +509,6 @@ export function AppLayout() {
       </div>
     );
   }
-
-  const showAllProjects = useSettingsStore((s) => s.showAllProjects);
 
   const workspaceList = orderedIds.map((id) => workspaces[id]).filter(Boolean);
   const activeProjectIdValue = workspaceList.find(ws => ws.id === activeWorkspaceId)?.projectId;

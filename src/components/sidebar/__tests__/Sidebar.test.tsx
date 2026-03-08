@@ -60,14 +60,24 @@ describe('Sidebar', () => {
     expect(defaultProps.onWorkspaceSelect).toHaveBeenCalledWith('ws-2');
   });
 
-  it('calls onWorkspaceCreate on new button click', async () => {
+  it('calls onWorkspaceCreate on new button click in project group', async () => {
     const user = userEvent.setup();
-    render(<Sidebar {...defaultProps} />);
+    const wsWithProject = {
+      ...makeWorkspace('ws-1', 'Workspace 1'),
+      projectId: 'proj-1',
+    };
+    render(
+      <Sidebar
+        {...defaultProps}
+        workspaces={[wsWithProject]}
+        activeWorkspaceId="ws-1"
+      />,
+    );
 
-    const createButton = screen.getByRole('button', { name: /open project/i });
+    const createButton = screen.getByRole('button', { name: /new workspace in/i });
     await user.click(createButton);
 
-    expect(defaultProps.onWorkspaceCreate).toHaveBeenCalledWith('');
+    expect(defaultProps.onWorkspaceCreate).toHaveBeenCalledWith('proj-1');
   });
 
   it('calls onOpenPreferences on Preferences button click', async () => {
@@ -218,7 +228,7 @@ describe('Sidebar', () => {
       const input = screen.getByRole('textbox');
       await user.clear(input);
       await user.type(input, 'Blurred Name');
-      await user.click(screen.getByRole('button', { name: /open project/i }));
+      await user.click(screen.getByRole('button', { name: /preferences/i }));
 
       expect(onRename).toHaveBeenCalledWith('ws-1', 'Blurred Name');
     });

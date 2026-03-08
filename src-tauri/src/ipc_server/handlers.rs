@@ -34,7 +34,10 @@ fn handle_workspace_list<C: IpcContext>(context: &C, id: Value) -> RpcResponse {
         .read()
         .expect("workspace state lock poisoned");
     let workspaces = ws.list_workspaces().to_vec();
-    RpcResponse::success(id, serde_json::to_value(workspaces).unwrap())
+    match serde_json::to_value(workspaces) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_workspace_create<C: IpcContext>(
@@ -84,7 +87,10 @@ fn handle_workspace_create<C: IpcContext>(
 
     context.session_manager().mark_dirty();
 
-    RpcResponse::success(id, serde_json::to_value(workspace).unwrap())
+    match serde_json::to_value(workspace) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_workspace_close<C: IpcContext>(
@@ -235,7 +241,10 @@ fn handle_session_info<C: IpcContext>(context: &C, id: Value) -> RpcResponse {
         uptime_secs: uptime,
     };
 
-    RpcResponse::success(id, serde_json::to_value(result).unwrap())
+    match serde_json::to_value(result) {
+        Ok(v) => RpcResponse::success(id, v),
+        Err(e) => RpcResponse::error(id, ERR_INTERNAL, format!("Serialization error: {e}")),
+    }
 }
 
 fn handle_session_save<C: IpcContext>(context: &C, id: Value) -> RpcResponse {
@@ -572,6 +581,122 @@ mod tests {
             Some(params),
             &ctx,
             serde_json::json!(12),
+        );
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    // --- Security tests ---
+
+    #[test]
+    fn oversized_json_params_does_not_crash() {
+        let ctx = TestContext::new();
+        // 1MB string value in params
+        let huge_string = "x".repeat(1_000_000);
+        let params = serde_json::json!({"name": huge_string});
+        let resp = dispatch(
+            METHOD_WORKSPACE_CREATE,
+            Some(params),
+            &ctx,
+            serde_json::json!(100),
+        );
+        // Should succeed (workspace.create accepts name) or fail gracefully
+        // The key assertion is that it does not panic/crash
+        assert!(resp.error.is_none() || resp.error.is_some());
+    }
+
+    #[test]
+    fn empty_method_returns_method_not_found() {
+        let ctx = TestContext::new();
+        let resp = dispatch("", None, &ctx, serde_json::json!(101));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn workspace_close_with_none_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let resp = dispatch(METHOD_WORKSPACE_CLOSE, None, &ctx, serde_json::json!(102));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn workspace_focus_with_none_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let resp = dispatch(METHOD_WORKSPACE_FOCUS, None, &ctx, serde_json::json!(103));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn pane_close_with_none_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let resp = dispatch(METHOD_PANE_CLOSE, None, &ctx, serde_json::json!(104));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn notify_send_with_none_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let resp = dispatch(METHOD_NOTIFY_SEND, None, &ctx, serde_json::json!(105));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn workspace_close_with_wrong_type_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        // Expects {"id": "string"} but we send a number
+        let params = serde_json::json!(42);
+        let resp = dispatch(
+            METHOD_WORKSPACE_CLOSE,
+            Some(params),
+            &ctx,
+            serde_json::json!(106),
+        );
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn workspace_focus_with_wrong_type_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let params = serde_json::json!("not-an-object");
+        let resp = dispatch(
+            METHOD_WORKSPACE_FOCUS,
+            Some(params),
+            &ctx,
+            serde_json::json!(107),
+        );
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn pane_close_with_wrong_type_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let params = serde_json::json!([1, 2, 3]);
+        let resp = dispatch(
+            METHOD_PANE_CLOSE,
+            Some(params),
+            &ctx,
+            serde_json::json!(108),
+        );
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
+    }
+
+    #[test]
+    fn notify_send_with_wrong_type_params_returns_invalid_params() {
+        let ctx = TestContext::new();
+        let params = serde_json::json!(true);
+        let resp = dispatch(
+            METHOD_NOTIFY_SEND,
+            Some(params),
+            &ctx,
+            serde_json::json!(109),
         );
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);

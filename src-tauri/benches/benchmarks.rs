@@ -77,11 +77,164 @@ fn bench_osc_parser_placeholder(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_workspace_split_pane(c: &mut Criterion) {
+    use obelisk_lib::workspace::WorkspaceState;
+    use obelisk_protocol::SplitDirection;
+
+    let mut group = c.benchmark_group("workspace");
+
+    group.bench_function("split_pane_100_times", |b| {
+        b.iter(|| {
+            let mut state = WorkspaceState::new();
+            state.create_workspace(
+                "Bench".to_string(),
+                "pane-0".to_string(),
+                "pty-0".to_string(),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            for i in 1..=100 {
+                // Always split the first pane so layout gets deeper
+                state
+                    .split_pane(
+                        "pane-0",
+                        if i % 2 == 0 {
+                            SplitDirection::Horizontal
+                        } else {
+                            SplitDirection::Vertical
+                        },
+                        format!("pane-{i}"),
+                        format!("pty-{i}"),
+                    )
+                    .unwrap();
+            }
+            std::hint::black_box(&state);
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_workspace_close_pane(c: &mut Criterion) {
+    use obelisk_lib::workspace::WorkspaceState;
+    use obelisk_protocol::SplitDirection;
+
+    let mut group = c.benchmark_group("workspace");
+
+    group.bench_function("close_panes_from_deep_layout", |b| {
+        b.iter_batched(
+            || {
+                // Setup: create a deeply nested layout with 50 panes
+                let mut state = WorkspaceState::new();
+                state.create_workspace(
+                    "Bench".to_string(),
+                    "pane-0".to_string(),
+                    "pty-0".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                );
+                for i in 1..50 {
+                    state
+                        .split_pane(
+                            &format!("pane-{}", i - 1),
+                            SplitDirection::Horizontal,
+                            format!("pane-{i}"),
+                            format!("pty-{i}"),
+                        )
+                        .unwrap();
+                }
+                state
+            },
+            |mut state| {
+                // Close panes from the deepest to shallowest
+                for i in (1..50).rev() {
+                    state.close_pane(&format!("pane-{i}")).unwrap();
+                }
+                std::hint::black_box(&state);
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
+    group.finish();
+}
+
+fn bench_osc_parser_feed(c: &mut Criterion) {
+    use obelisk_lib::notifications::osc_parser::OscParser;
+
+    // Build 1MB of mixed terminal output with OSC sequences interspersed
+    let mut data = Vec::with_capacity(1024 * 1024);
+    let normal_chunk =
+        b"Hello, this is normal terminal output with colors \x1b[32mgreen\x1b[0m and stuff.\r\n";
+    let osc_chunk = b"\x1b]9;Build complete\x07";
+    let osc7_chunk = b"\x1b]7;file://localhost/home/user/project\x07";
+
+    while data.len() < 1024 * 1024 {
+        // Mix normal text with occasional OSC sequences
+        for _ in 0..10 {
+            data.extend_from_slice(normal_chunk);
+        }
+        data.extend_from_slice(osc_chunk);
+        data.extend_from_slice(osc7_chunk);
+    }
+    data.truncate(1024 * 1024);
+
+    let mut group = c.benchmark_group("osc-parser");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("feed-1mb-mixed-output", |b| {
+        b.iter(|| {
+            let mut parser = OscParser::new();
+            let result = parser.feed(std::hint::black_box(&data));
+            std::hint::black_box(&result);
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_parse_proc_net_tcp(c: &mut Criterion) {
+    use obelisk_lib::metadata::ports::parse_proc_net_tcp;
+
+    // Build a realistic /proc/net/tcp with 100 entries
+    let mut content = String::from(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n",
+    );
+    for i in 0..100u16 {
+        let port_hex = format!("{:04X}", 3000 + i);
+        // Alternate between LISTEN (0A) and ESTABLISHED (01) states
+        let state = if i % 3 == 0 { "01" } else { "0A" };
+        content.push_str(&format!(
+            "   {i}: 00000000:{port_hex} 00000000:0000 {state} 00000000:00000000 00:00000000 00000000  1000        0 {}\n",
+            12345 + i as u32
+        ));
+    }
+
+    let mut group = c.benchmark_group("port-parsing");
+
+    group.bench_function("parse_proc_net_tcp_100_entries", |b| {
+        b.iter(|| {
+            let result = parse_proc_net_tcp(std::hint::black_box(&content));
+            std::hint::black_box(&result);
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_base64_encode,
     bench_base64_decode,
     bench_event_serialization,
     bench_osc_parser_placeholder,
+    bench_workspace_split_pane,
+    bench_workspace_close_pane,
+    bench_osc_parser_feed,
+    bench_parse_proc_net_tcp,
 );
 criterion_main!(benches);

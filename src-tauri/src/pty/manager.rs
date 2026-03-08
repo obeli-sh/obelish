@@ -796,4 +796,184 @@ mod tests {
         assert!(events.iter().any(|(name, _)| name.starts_with("pty-data-")));
         assert!(!events.iter().any(|(name, _)| name == "notification-raw"));
     }
+
+    #[test]
+    fn write_invalid_base64_returns_error() {
+        let (manager, emitter) = make_manager();
+        let id = manager.spawn(default_config(), emitter).unwrap();
+        let result = manager.write(&id, "not-valid-base64!!!");
+        assert!(result.is_err());
+    }
+
+    // --- PTY read loop edge case tests ---
+
+    /// A reader that delivers data in controlled chunks, with an optional
+    /// delay between reads to simulate partial delivery.
+    struct ChunkedReader {
+        chunks: Vec<Vec<u8>>,
+        index: usize,
+    }
+
+    impl ChunkedReader {
+        fn new(chunks: Vec<Vec<u8>>) -> Self {
+            Self { chunks, index: 0 }
+        }
+    }
+
+    impl Read for ChunkedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.index >= self.chunks.len() {
+                return Ok(0); // EOF
+            }
+            let chunk = &self.chunks[self.index];
+            let n = chunk.len().min(buf.len());
+            buf[..n].copy_from_slice(&chunk[..n]);
+            self.index += 1;
+            Ok(n)
+        }
+    }
+
+    /// A reader that returns an error on the first read.
+    struct ErrorReader;
+
+    impl Read for ErrorReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "pipe broken",
+            ))
+        }
+    }
+
+    #[test]
+    fn read_loop_partial_osc_across_chunks() {
+        // Split an OSC 9 notification sequence across two reads.
+        // Full sequence: ESC ] 9 ; H e l l o BEL
+        let full = b"\x1b]9;Hello\x07";
+        // Split right in the middle of the payload
+        let split = 5; // "\x1b]9;H" | "ello\x07"
+        let chunk1 = full[..split].to_vec();
+        let chunk2 = full[split..].to_vec();
+
+        let emitter = Arc::new(MockEventEmitter::new());
+        let reader = ChunkedReader::new(vec![chunk1, chunk2]);
+        let pty_id = "test-partial-osc".to_string();
+
+        pty_read_loop(Box::new(reader), pty_id.clone(), emitter.clone());
+
+        let events = emitter.events();
+
+        // Should have notification-raw event despite the split
+        let notif_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == "notification-raw")
+            .collect();
+        assert_eq!(
+            notif_events.len(),
+            1,
+            "notification should be captured despite split across chunks"
+        );
+        assert_eq!(notif_events[0].1["title"], "Hello");
+        assert_eq!(notif_events[0].1["oscType"], 9);
+
+        // Should have pty-exit event
+        assert!(events
+            .iter()
+            .any(|(name, _)| name == &format!("pty-exit-{pty_id}")));
+    }
+
+    #[test]
+    fn read_loop_cwd_change_event() {
+        // OSC 7 sequence: ESC ] 7 ; file://localhost/home/user BEL
+        let osc7 = b"\x1b]7;file://localhost/home/user\x07";
+        let emitter = Arc::new(MockEventEmitter::new());
+        let reader = std::io::Cursor::new(osc7.to_vec());
+        let pty_id = "test-cwd".to_string();
+
+        pty_read_loop(Box::new(reader), pty_id.clone(), emitter.clone());
+
+        let events = emitter.events();
+
+        // Should have cwd-changed-{pty_id} event
+        let cwd_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == &format!("cwd-changed-{pty_id}"))
+            .collect();
+        assert_eq!(
+            cwd_events.len(),
+            1,
+            "should emit exactly one cwd-changed event"
+        );
+        assert_eq!(cwd_events[0].1["cwd"], "/home/user");
+    }
+
+    #[test]
+    fn read_loop_handles_reader_error_gracefully() {
+        let emitter = Arc::new(MockEventEmitter::new());
+        let pty_id = "test-error".to_string();
+
+        // ErrorReader returns Err on first read
+        pty_read_loop(Box::new(ErrorReader), pty_id.clone(), emitter.clone());
+
+        let events = emitter.events();
+
+        // Should still emit pty-exit event
+        let exit_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == &format!("pty-exit-{pty_id}"))
+            .collect();
+        assert_eq!(
+            exit_events.len(),
+            1,
+            "should emit pty-exit even on reader error"
+        );
+
+        // Should NOT have any pty-data events (error on first read)
+        let data_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name.starts_with("pty-data-"))
+            .collect();
+        assert!(
+            data_events.is_empty(),
+            "should not emit data events on immediate error"
+        );
+    }
+
+    #[test]
+    fn read_loop_partial_osc7_across_chunks() {
+        // Split an OSC 7 CWD sequence across two chunks
+        let full = b"\x1b]7;file:///tmp/mydir\x07";
+        let split = 10; // "\x1b]7;file:/" | "/tmp/mydir\x07"
+        let chunk1 = full[..split].to_vec();
+        let chunk2 = full[split..].to_vec();
+
+        let emitter = Arc::new(MockEventEmitter::new());
+        let reader = ChunkedReader::new(vec![chunk1, chunk2]);
+        let pty_id = "test-partial-osc7".to_string();
+
+        pty_read_loop(Box::new(reader), pty_id.clone(), emitter.clone());
+
+        let events = emitter.events();
+
+        // Should have cwd-changed event despite the split
+        let cwd_events: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == &format!("cwd-changed-{pty_id}"))
+            .collect();
+        assert_eq!(
+            cwd_events.len(),
+            1,
+            "CWD change should be captured despite split across chunks"
+        );
+        assert_eq!(cwd_events[0].1["cwd"], "/tmp/mydir");
+    }
+
+    #[test]
+    fn write_empty_base64_succeeds() {
+        let (manager, emitter) = make_manager();
+        let id = manager.spawn(default_config(), emitter).unwrap();
+        let result = manager.write(&id, "");
+        // Empty base64 decodes to empty bytes, should succeed
+        assert!(result.is_ok());
+    }
 }

@@ -510,7 +510,7 @@ const closeButtonStyle: React.CSSProperties = {
   color: 'inherit',
   cursor: 'pointer',
   padding: '2px 8px',
-  fontSize: 15,
+  fontSize: 20,
   fontFamily: 'var(--ui-font-mono)',
   borderRadius: 'var(--ui-radius)',
 };

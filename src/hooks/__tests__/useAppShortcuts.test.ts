@@ -81,6 +81,10 @@ describe('useAppShortcuts', () => {
       activeSurfaceIndex: 0,
       createdAt: 0,
     }));
+    mockInvoke('session_restore', () => []);
+
+    // Suppress expected console.error from async .catch handlers in commands
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -88,6 +92,7 @@ describe('useAppShortcuts', () => {
       value: originalPlatform,
       configurable: true,
     });
+    vi.restoreAllMocks();
   });
 
   it('Ctrl+Shift+H calls pane.split with horizontal', () => {

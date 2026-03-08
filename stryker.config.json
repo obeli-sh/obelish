@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "mutate": [
+    "src/stores/workspaceStore.ts",
+    "src/stores/uiStore.ts",
+    "src/stores/settingsStore.ts",
+    "src/stores/projectStore.ts",
+    "src/stores/notificationStore.ts",
+    "src/lib/tauri-bridge.ts",
+    "src/lib/commands.ts",
+    "src/lib/auto-split.ts",
+    "src/lib/fuzzy-search.ts",
+    "src/lib/keybinding-utils.ts",
+    "src/lib/safe-listen.ts",
+    "src/lib/browser-mock.ts"
+  ],
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "reporters": ["clear-text", "html"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/html"
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 75,
+    "break": 70
+  },
+  "concurrency": 4,
+  "timeoutMS": 30000
+}

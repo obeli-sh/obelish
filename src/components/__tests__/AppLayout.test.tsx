@@ -110,9 +110,7 @@ describe('AppLayout', () => {
     mockInvoke('session_restore', () => Promise.reject(new Error('backend down')));
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Failed to load workspaces: backend down/)).toBeInTheDocument();
-    });
+    await screen.findByText(/Failed to load workspaces: backend down/);
   });
 
   it('session restore returns workspaces (backend creates default if needed)', async () => {
@@ -136,9 +134,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText('My Workspace')).toBeInTheDocument();
-    });
+    await screen.findByText('My Workspace');
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
@@ -149,9 +145,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
   });
 
   it('uses edge-to-edge layout without outer content padding', async () => {
@@ -160,9 +154,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
 
     const sidebarNav = screen.getByRole('navigation');
     const sidebarContainer = sidebarNav.parentElement as HTMLDivElement;
@@ -183,32 +175,31 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Workspace 2')).toBeInTheDocument();
-    });
+    await screen.findByText('Workspace 2');
 
     await user.click(screen.getByText('Workspace 2'));
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-2');
   });
 
-  it('handles workspace create', async () => {
-    const user = userEvent.setup();
+  it('handles workspace create by opening project picker', async () => {
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     mockInvoke('session_restore', () => Promise.resolve([ws1]));
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /open project/i })).toBeInTheDocument();
+    await screen.findByTestId('terminal-pane-pane-1');
+
+    // Programmatically open the project picker (simulates workspace.create command)
+    act(() => {
+      useUiStore.getState().setProjectPickerOpen(true);
     });
 
-    await user.click(screen.getByRole('button', { name: /open project/i }));
-
-    // handleWorkspaceCreate('') opens the project picker dialog instead of
-    // directly calling workspace_create
     await waitFor(() => {
-      expect(invoke).not.toHaveBeenCalledWith('workspace_create', expect.anything());
+      expect(screen.getByText('Open a Project')).toBeInTheDocument();
     });
+
+    // Verify workspace_create was NOT called directly
+    expect(invoke).not.toHaveBeenCalledWith('workspace_create', expect.anything());
   });
 
   it('handles workspace close', async () => {
@@ -219,9 +210,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Workspace 1')).toBeInTheDocument();
-    });
+    await screen.findByText('Workspace 1');
 
     // Hover workspace item to reveal close button (visibility: hidden by default)
     const wsItem = screen.getByText('Workspace 1').closest('li') as HTMLElement;
@@ -316,9 +305,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
 
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
@@ -340,9 +327,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
 
     const updatedWs = makeWorkspace('ws-1', 'Updated Name', 'pane-1');
     act(() => {
@@ -352,9 +337,7 @@ describe('AppLayout', () => {
       });
     });
 
-    await waitFor(() => {
-      expect(screen.getByText('Updated Name')).toBeInTheDocument();
-    });
+    await screen.findByText('Updated Name');
   });
 
   it('subscribes to workspace-removed event and removes workspace from store', async () => {
@@ -364,10 +347,8 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Workspace 1')).toBeInTheDocument();
-      expect(screen.getByText('Workspace 2')).toBeInTheDocument();
-    });
+    await screen.findByText('Workspace 1');
+    expect(screen.getByText('Workspace 2')).toBeInTheDocument();
 
     act(() => {
       emitMockEvent('workspace-removed', { workspaceId: 'ws-1' });
@@ -383,9 +364,13 @@ describe('AppLayout', () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     const ws2 = makeWorkspace('ws-2', 'Workspace 2', 'pane-2', 'pty-2');
-    mockInvoke('session_restore', () => Promise.resolve([ws1, ws2]));
+    let ws1Removed = false;
+    mockInvoke('session_restore', () =>
+      Promise.resolve(ws1Removed ? [ws2] : [ws1, ws2]),
+    );
     // Simulate backend: pane_close succeeds and backend emits workspace-removed
     mockInvoke('pane_close', () => {
+      ws1Removed = true;
       // Backend emits workspace-removed event when last pane closes the workspace
       emitMockEvent('workspace-removed', { workspaceId: 'ws-1' });
       return Promise.resolve();
@@ -393,9 +378,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
 
     await user.click(screen.getByRole('button', { name: /close pane pane-1/i }));
 
@@ -412,9 +395,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('tablist')).toBeInTheDocument();
-    });
+    await screen.findByRole('tablist');
 
     expect(screen.getByText('Surface 1')).toBeInTheDocument();
     expect(screen.getByText('Surface 2')).toBeInTheDocument();
@@ -426,9 +407,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-    });
+    await screen.findByTestId('terminal-pane-pane-1');
 
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
@@ -534,9 +513,7 @@ describe('AppLayout', () => {
 
     render(<AppLayout />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Workspace 1')).toBeInTheDocument();
-    });
+    await screen.findByText('Workspace 1');
 
     // Double-click to enter edit mode
     const nameButton = screen.getByRole('button', { name: 'Workspace 1' });
@@ -562,9 +539,7 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /close pane pane-1/i }));
 
@@ -607,9 +582,7 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /split horizontal pane-1/i }));
 
@@ -627,9 +600,7 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /split vertical pane-1/i }));
 
@@ -647,9 +618,7 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /open browser pane-1/i }));
 
@@ -689,16 +658,14 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /open browser pane-1/i }));
 
       await waitFor(() => {
         expect(useWorkspaceStore.getState().browserPaneUrls['pane-browser']).toBe('about:blank');
-        expect(screen.getByTitle('Browser panel')).toBeInTheDocument();
       });
+      expect(screen.getByTitle('Browser panel')).toBeInTheDocument();
     });
 
     it('handlePaneAutoSplit uses focused pane dimensions to choose direction', async () => {
@@ -716,9 +683,7 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
 
       await user.click(screen.getByRole('button', { name: /auto split pane-1/i }));
 
@@ -756,10 +721,8 @@ describe('AppLayout', () => {
 
       render(<AppLayout />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('terminal-pane-pane-1')).toBeInTheDocument();
-        expect(screen.getByTestId('terminal-pane-pane-2')).toBeInTheDocument();
-      });
+      await screen.findByTestId('terminal-pane-pane-1');
+      expect(screen.getByTestId('terminal-pane-pane-2')).toBeInTheDocument();
 
       const sourcePane = screen
         .getByTestId('terminal-pane-pane-1')

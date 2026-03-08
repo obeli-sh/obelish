@@ -28,7 +28,11 @@ const commands: Command[] = [
     defaultBinding: kb('h', true, true),
     execute: () => {
       const paneId = useUiStore.getState().focusedPaneId;
-      if (paneId) tauriBridge.pane.split(paneId, 'horizontal');
+      if (paneId) {
+        tauriBridge.pane.split(paneId, 'horizontal')
+          .then((ws) => useWorkspaceStore.getState()._syncWorkspace(ws))
+          .catch((err) => console.error('Failed to split pane:', err));
+      }
     },
   },
   {
@@ -39,7 +43,11 @@ const commands: Command[] = [
     defaultBinding: kb('v', true, true),
     execute: () => {
       const paneId = useUiStore.getState().focusedPaneId;
-      if (paneId) tauriBridge.pane.split(paneId, 'vertical');
+      if (paneId) {
+        tauriBridge.pane.split(paneId, 'vertical')
+          .then((ws) => useWorkspaceStore.getState()._syncWorkspace(ws))
+          .catch((err) => console.error('Failed to split pane:', err));
+      }
     },
   },
   {
@@ -50,7 +58,15 @@ const commands: Command[] = [
     defaultBinding: kb('w'),
     execute: () => {
       const paneId = useUiStore.getState().focusedPaneId;
-      if (paneId) tauriBridge.pane.close(paneId);
+      if (paneId) {
+        useUiStore.getState().setFocusedPane(null);
+        tauriBridge.pane.close(paneId)
+          .then(() => tauriBridge.session.restore())
+          .then((list) => {
+            for (const ws of list) useWorkspaceStore.getState()._syncWorkspace(ws);
+          })
+          .catch((err) => console.error('Failed to close pane:', err));
+      }
     },
   },
   {
@@ -61,7 +77,11 @@ const commands: Command[] = [
     defaultBinding: kb('b', true, true),
     execute: () => {
       const paneId = useUiStore.getState().focusedPaneId;
-      if (paneId) tauriBridge.pane.openBrowser(paneId, 'about:blank', 'horizontal');
+      if (paneId) {
+        tauriBridge.pane.openBrowser(paneId, 'about:blank', 'horizontal')
+          .then((ws) => useWorkspaceStore.getState()._syncWorkspace(ws))
+          .catch((err) => console.error('Failed to open browser:', err));
+      }
     },
   },
   // Workspace commands
