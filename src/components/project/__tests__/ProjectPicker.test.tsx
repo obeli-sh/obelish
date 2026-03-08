@@ -19,12 +19,12 @@ vi.mock('../../../lib/tauri-bridge', () => ({
 
 const mockIsTauri = vi.fn(() => false);
 vi.mock('../../../lib/browser-mock', () => ({
-  isTauri: (...args: unknown[]) => mockIsTauri(...args),
+  isTauri: () => mockIsTauri(),
 }));
 
 const mockOpen = vi.fn();
 vi.mock('@tauri-apps/plugin-dialog', () => ({
-  open: (...args: unknown[]) => mockOpen(...args),
+  open: (...args: Parameters<typeof mockOpen>) => mockOpen(...args),
 }));
 
 import { tauriBridge } from '../../../lib/tauri-bridge';
