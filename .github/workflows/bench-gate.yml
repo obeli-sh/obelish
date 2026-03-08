@@ -35,4 +35,10 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - name: Compare benchmarks (15% regression threshold)
-        run: critcmp base pr --threshold 15
+        run: |
+          output=$(critcmp base pr --threshold 15 2>&1) || true
+          echo "$output"
+          if echo "$output" | grep -q "regressed"; then
+            echo "::error::Performance regression detected"
+            exit 1
+          fi
