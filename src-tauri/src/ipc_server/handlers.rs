@@ -701,4 +701,38 @@ mod tests {
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ERR_INVALID_PARAMS);
     }
+
+    #[test]
+    fn error_responses_do_not_leak_paths() {
+        let ctx = TestContext::new();
+
+        // Unknown method
+        let resp = dispatch("nonexistent.method", None, &ctx, serde_json::json!(1));
+        let err_msg = resp.error.unwrap().message;
+        assert!(
+            !err_msg.contains("/home/"),
+            "Error should not leak paths: {err_msg}"
+        );
+        assert!(
+            !err_msg.contains("/Users/"),
+            "Error should not leak paths: {err_msg}"
+        );
+
+        // Invalid params
+        let resp = dispatch(
+            METHOD_WORKSPACE_CLOSE,
+            Some(serde_json::json!({"wrong": true})),
+            &ctx,
+            serde_json::json!(2),
+        );
+        let err_msg = resp.error.unwrap().message;
+        assert!(
+            !err_msg.contains("/home/"),
+            "Error should not leak paths: {err_msg}"
+        );
+        assert!(
+            !err_msg.contains("/Users/"),
+            "Error should not leak paths: {err_msg}"
+        );
+    }
 }

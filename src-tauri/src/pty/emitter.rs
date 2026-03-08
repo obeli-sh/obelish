@@ -24,6 +24,7 @@ impl EventEmitter for TauriEventEmitter {
 #[cfg(test)]
 pub struct MockEventEmitter {
     events: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
+    condvar: std::sync::Condvar,
 }
 
 #[cfg(test)]
@@ -31,11 +32,25 @@ impl MockEventEmitter {
     pub fn new() -> Self {
         Self {
             events: std::sync::Mutex::new(Vec::new()),
+            condvar: std::sync::Condvar::new(),
         }
     }
 
     pub fn events(&self) -> Vec<(String, serde_json::Value)> {
         self.events.lock().unwrap().clone()
+    }
+
+    /// Wait for an event whose name starts with `prefix`, with a timeout.
+    /// Returns `true` if the event was found, `false` on timeout.
+    pub fn wait_for_event(&self, prefix: &str, timeout: std::time::Duration) -> bool {
+        let guard = self.events.lock().unwrap();
+        let result = self
+            .condvar
+            .wait_timeout_while(guard, timeout, |events| {
+                !events.iter().any(|(name, _)| name.starts_with(prefix))
+            })
+            .unwrap();
+        !result.1.timed_out()
     }
 }
 
@@ -46,6 +61,7 @@ impl EventEmitter for MockEventEmitter {
             .lock()
             .unwrap()
             .push((event.to_string(), payload));
+        self.condvar.notify_all();
         Ok(())
     }
 }

@@ -62,12 +62,16 @@ jobs:
         run: cargo test --workspace
         env:
           RUST_BACKTRACE: 1
+      - name: Security audit
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo install cargo-audit
+          cargo audit
       - name: Rust code coverage
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo install cargo-tarpaulin
-          cargo tarpaulin --workspace --out xml --output-dir coverage/
-        continue-on-error: true
+          cargo tarpaulin --workspace --out xml --output-dir coverage/ --fail-under 70
       - name: Upload Rust coverage
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
@@ -170,7 +174,19 @@ jobs:
         run: cargo install cargo-mutants
       - name: Run mutation testing
         run: cargo mutants --no-shuffle --timeout 120
-        continue-on-error: true
+      - name: Extract mutation score
+        if: always()
+        run: |
+          if [ -f mutants.out/caught.txt ] && [ -f mutants.out/missed.txt ]; then
+            caught=$(wc -l < mutants.out/caught.txt)
+            missed=$(wc -l < mutants.out/missed.txt)
+            total=$((caught + missed))
+            if [ $total -gt 0 ]; then
+              score=$((caught * 100 / total))
+              echo "Mutation score: ${score}% (${caught}/${total})"
+              echo "MUTATION_SCORE=${score}" >> $GITHUB_ENV
+            fi
+          fi
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4

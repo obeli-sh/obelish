@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { NotificationPanel } from '../NotificationPanel';
 import { useNotificationStore } from '../../../stores/notificationStore';
 import type { Notification } from '../../../lib/workspace-types';
@@ -37,5 +37,35 @@ describe('NotificationPanel snapshots', () => {
   it('matches snapshot with empty state', () => {
     const { container } = render(<NotificationPanel isOpen={true} onClose={vi.fn()} />);
     expect(container).toMatchSnapshot();
+  });
+});
+
+describe('NotificationPanel behavioral', () => {
+  beforeEach(() => {
+    useNotificationStore.setState({ notifications: [] });
+  });
+
+  it('renders notification titles in the DOM', () => {
+    useNotificationStore.setState({
+      notifications: [
+        makeNotification({ id: 'n-1', title: 'Build complete' }),
+        makeNotification({ id: 'n-2', title: 'Tests passed' }),
+      ],
+    });
+    render(<NotificationPanel isOpen={true} onClose={vi.fn()} />);
+    expect(screen.getByText('Build complete')).toBeInTheDocument();
+    expect(screen.getByText('Tests passed')).toBeInTheDocument();
+  });
+
+  it('calls onClose when close button is clicked', () => {
+    const onClose = vi.fn();
+    render(<NotificationPanel isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByLabelText('Close'));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('shows empty state message when there are no notifications', () => {
+    render(<NotificationPanel isOpen={true} onClose={vi.fn()} />);
+    expect(screen.getByText('No notifications')).toBeInTheDocument();
   });
 });

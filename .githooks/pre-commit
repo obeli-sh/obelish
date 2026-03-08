@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-commit checks..."
+
+# Rust formatting check
+echo "Checking Rust formatting..."
+cargo fmt --check 2>/dev/null || {
+    echo "ERROR: Rust formatting issues found. Run 'cargo fmt' to fix."
+    exit 1
+}
+
+# Rust clippy check
+echo "Running Clippy..."
+cargo clippy --workspace -- -D warnings 2>/dev/null || {
+    echo "ERROR: Clippy warnings found. Fix them before committing."
+    exit 1
+}
+
+# TypeScript typecheck
+echo "Running TypeScript typecheck..."
+bun run typecheck 2>/dev/null || {
+    echo "ERROR: TypeScript type errors found. Fix them before committing."
+    exit 1
+}
+
+# ESLint
+echo "Running ESLint..."
+bun run lint 2>/dev/null || {
+    echo "ERROR: ESLint errors found. Fix them before committing."
+    exit 1
+}
+
+echo "All pre-commit checks passed!"

@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [fuzz_osc_parser, fuzz_ports_parser, fuzz_git_parser]
+        target: [fuzz_osc_parser, fuzz_ports_parser, fuzz_git_parser, fuzz_ipc_framing, fuzz_session_deser]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -26,7 +26,7 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
       - name: Run fuzzer (${{ matrix.target }})
-        run: cd src-tauri/fuzz && cargo fuzz run ${{ matrix.target }} -- -max_total_time=60
+        run: cd src-tauri/fuzz && cargo fuzz run ${{ matrix.target }} -- -max_total_time=300
       - name: Upload corpus on failure
         if: failure()
         uses: actions/upload-artifact@v4

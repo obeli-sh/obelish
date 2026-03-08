@@ -786,4 +786,162 @@ mod tests {
         );
         assert!(deserialized.workspaces[0].is_root_worktree);
     }
+
+    // --- Corrupted session recovery tests ---
+
+    #[test]
+    fn partial_json_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"{\"workspaces\": [")
+            .unwrap();
+        let result = manager.load();
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn wrong_schema_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"{\"foo\": \"bar\"}")
+            .unwrap();
+        let result = manager.load();
+        // Should fail because required fields are missing
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn duplicate_pane_ids_deserializes_last_wins() {
+        let json = r#"{
+            "workspaces": [{
+                "id": "ws-1", "name": "WS", "surfaces": [{"id": "s-1", "name": "S", "layout": {"type": "leaf", "paneId": "pane-1", "ptyId": "pty-1"}}],
+                "activeSurfaceIndex": 0, "createdAt": 100
+            }],
+            "activeWorkspaceId": "ws-1",
+            "panes": {
+                "pane-1": {"id": "pane-1", "ptyId": "pty-1", "paneType": "terminal", "cwd": null}
+            }
+        }"#;
+        let session: SessionState = serde_json::from_str(json).unwrap();
+        assert_eq!(session.panes.len(), 1);
+    }
+
+    #[test]
+    fn large_session_roundtrip() {
+        let (_dir, manager) = setup();
+        let mut state = WorkspaceState::new();
+        for i in 0..100 {
+            state.create_workspace(
+                format!("WS-{i}"),
+                format!("pane-{i}"),
+                format!("pty-{i}"),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+        manager.save(&state).unwrap();
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 100);
+    }
+
+    #[test]
+    fn concurrent_save_and_load() {
+        let (_dir, manager) = setup();
+        let manager = std::sync::Arc::new(manager);
+        let state = make_complex_workspace_state();
+
+        // Save once first
+        manager.save(&state).unwrap();
+
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let m = manager.clone();
+                let s = state.to_session_state();
+                std::thread::spawn(move || {
+                    if i % 2 == 0 {
+                        m.save_from_session(&s).unwrap();
+                    } else {
+                        let _ = m.load();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Final load should succeed
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 2);
+    }
+
+    #[test]
+    fn save_overwrites_previous() {
+        let (_dir, manager) = setup();
+        let state1 = make_test_workspace_state();
+        manager.save(&state1).unwrap();
+
+        let mut state2 = WorkspaceState::new();
+        state2.create_workspace(
+            "New WS".to_string(),
+            "pane-new".to_string(),
+            "pty-new".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+        state2.create_workspace(
+            "Another".to_string(),
+            "pane-another".to_string(),
+            "pty-another".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+        manager.save(&state2).unwrap();
+
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 2);
+        assert_eq!(loaded.workspaces[0].name, "New WS");
+    }
+
+    #[test]
+    fn binary_garbage_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, &[0xFF, 0xFE, 0xFD, 0x00, 0x01])
+            .unwrap();
+        let result = manager.load();
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn corrupted_error_does_not_leak_paths() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"invalid json{{{")
+            .unwrap();
+        let err = manager.load().unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("C:\\"),
+            "Error should not contain internal paths: {msg}"
+        );
+    }
 }

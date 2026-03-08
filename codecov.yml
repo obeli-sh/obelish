@@ -11,7 +11,7 @@ coverage:
         threshold: 2%
     patch:
       default:
-        target: 80%
+        target: 85%
 comment:
   layout: "reach,diff,flags"
   behavior: default

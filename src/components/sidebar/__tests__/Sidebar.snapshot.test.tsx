@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { clearEventMocks } from '@tauri-apps/api/event';
 import { Sidebar } from '../Sidebar';
 import type { WorkspaceInfo } from '../../../lib/workspace-types';
@@ -52,5 +52,62 @@ describe('Sidebar snapshots', () => {
       />,
     );
     expect(container).toMatchSnapshot();
+  });
+});
+
+describe('Sidebar behavioral', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearEventMocks();
+  });
+
+  it('renders workspace names', () => {
+    render(
+      <Sidebar
+        workspaces={[makeWorkspace('ws-1', 'Main'), makeWorkspace('ws-2', 'Dev')]}
+        activeWorkspaceId="ws-1"
+        onWorkspaceSelect={vi.fn()}
+        onWorkspaceCreate={vi.fn()}
+        onWorkspaceClose={vi.fn()}
+        onWorkspaceReorder={vi.fn()}
+        onOpenPreferences={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Main')).toBeInTheDocument();
+    expect(screen.getByText('Dev')).toBeInTheDocument();
+  });
+
+  it('calls onWorkspaceSelect when a workspace is clicked', () => {
+    const onWorkspaceSelect = vi.fn();
+    render(
+      <Sidebar
+        workspaces={[makeWorkspace('ws-1', 'Main'), makeWorkspace('ws-2', 'Dev')]}
+        activeWorkspaceId="ws-1"
+        onWorkspaceSelect={onWorkspaceSelect}
+        onWorkspaceCreate={vi.fn()}
+        onWorkspaceClose={vi.fn()}
+        onWorkspaceReorder={vi.fn()}
+        onOpenPreferences={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('Dev'));
+    expect(onWorkspaceSelect).toHaveBeenCalledWith('ws-2');
+  });
+
+  it('calls onOpenPreferences when preferences button is clicked', () => {
+    const onOpenPreferences = vi.fn();
+    render(
+      <Sidebar
+        workspaces={[makeWorkspace('ws-1', 'Main')]}
+        activeWorkspaceId="ws-1"
+        onWorkspaceSelect={vi.fn()}
+        onWorkspaceCreate={vi.fn()}
+        onWorkspaceClose={vi.fn()}
+        onWorkspaceReorder={vi.fn()}
+        onOpenPreferences={onOpenPreferences}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Preferences'));
+    expect(onOpenPreferences).toHaveBeenCalledOnce();
   });
 });

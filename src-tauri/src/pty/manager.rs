@@ -374,13 +374,15 @@ mod tests {
         let manager = PtyManager::new(backend);
         let _id = manager.spawn(default_config(), emitter.clone()).unwrap();
 
-        // Wait for read thread to process data and exit
-        std::thread::sleep(Duration::from_millis(100));
-
-        let events = emitter.events();
-        // Should have at least one data event and one exit event
-        assert!(events.iter().any(|(name, _)| name.starts_with("pty-data-")));
-        assert!(events.iter().any(|(name, _)| name.starts_with("pty-exit-")));
+        // Wait for read thread to process data and exit (Condvar-based, no sleep)
+        assert!(
+            emitter.wait_for_event("pty-data-", Duration::from_secs(5)),
+            "expected pty-data event"
+        );
+        assert!(
+            emitter.wait_for_event("pty-exit-", Duration::from_secs(5)),
+            "expected pty-exit event"
+        );
     }
 
     #[test]
@@ -526,18 +528,18 @@ mod tests {
         let manager = PtyManager::new(backend);
         let id = manager.spawn(default_config(), emitter.clone()).unwrap();
 
-        // Give the read thread time to start blocking
+        // Give the read thread time to start blocking on the socket
         std::thread::sleep(Duration::from_millis(50));
 
         // Kill should close the writer end (via FakeChild), causing reader EOF.
-        // Then join the read thread successfully.
         let result = manager.kill(&id);
         assert!(result.is_ok());
 
-        // Verify exit event was emitted
-        std::thread::sleep(Duration::from_millis(50));
-        let events = emitter.events();
-        assert!(events.iter().any(|(name, _)| name.starts_with("pty-exit-")));
+        // Wait for exit event (Condvar-based, no sleep)
+        assert!(
+            emitter.wait_for_event("pty-exit-", Duration::from_secs(5)),
+            "expected pty-exit event after kill"
+        );
     }
 
     #[test]
@@ -671,8 +673,11 @@ mod tests {
         let manager = PtyManager::new(backend);
         let _id = manager.spawn(default_config(), emitter.clone()).unwrap();
 
-        // Wait for read thread to process
-        std::thread::sleep(Duration::from_millis(100));
+        // Wait for read thread to finish (Condvar-based, no sleep)
+        assert!(
+            emitter.wait_for_event("pty-exit-", Duration::from_secs(5)),
+            "expected pty-exit event"
+        );
 
         let events = emitter.events();
 
@@ -789,7 +794,11 @@ mod tests {
         let manager = PtyManager::new(backend);
         let _id = manager.spawn(default_config(), emitter.clone()).unwrap();
 
-        std::thread::sleep(Duration::from_millis(100));
+        // Wait for read thread to finish (Condvar-based, no sleep)
+        assert!(
+            emitter.wait_for_event("pty-exit-", Duration::from_secs(5)),
+            "expected pty-exit event"
+        );
 
         let events = emitter.events();
         // Should have pty-data but no notification-raw
@@ -975,5 +984,51 @@ mod tests {
         let result = manager.write(&id, "");
         // Empty base64 decodes to empty bytes, should succeed
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn concurrent_spawn_with_failures() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let call_count = Arc::new(AtomicU32::new(0));
+        let cc = call_count.clone();
+        let backend: Arc<dyn PtyBackend> = Arc::new(FakePtyBackend {
+            factory: Mutex::new(Box::new(move |_config| {
+                let count = cc.fetch_add(1, Ordering::SeqCst) + 1;
+                if count % 2 == 0 {
+                    Err(PtyError::SpawnFailed(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "injected failure",
+                    )))
+                } else {
+                    Ok(SpawnedPty {
+                        writer: Box::new(SinkWriter),
+                        reader: Box::new(EmptyReader),
+                        child: Box::new(FakeChild::new()),
+                        resizer: Box::new(FakeResizer),
+                    })
+                }
+            })),
+        });
+        let manager = Arc::new(PtyManager::new(backend));
+
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let m = manager.clone();
+                let e = Arc::new(MockEventEmitter::new());
+                std::thread::spawn(move || m.spawn(default_config(), e))
+            })
+            .collect();
+
+        let mut successes = 0;
+        let mut failures = 0;
+        for h in handles {
+            match h.join().unwrap() {
+                Ok(_) => successes += 1,
+                Err(_) => failures += 1,
+            }
+        }
+        assert!(successes > 0, "expected at least one successful spawn");
+        assert!(failures > 0, "expected at least one failed spawn");
     }
 }

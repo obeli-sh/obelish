@@ -9,9 +9,14 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "io-util"] }
 
 [dependencies.obelisk_lib]
 path = ".."
+
+[dependencies.obelisk-protocol]
+path = "../../obelisk-protocol"
 
 [[bin]]
 name = "fuzz_osc_parser"
@@ -26,4 +31,14 @@ doc = false
 [[bin]]
 name = "fuzz_git_parser"
 path = "fuzz_targets/fuzz_git_parser.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_ipc_framing"
+path = "fuzz_targets/fuzz_ipc_framing.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_session_deser"
+path = "fuzz_targets/fuzz_session_deser.rs"
 doc = false

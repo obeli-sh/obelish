@@ -12,7 +12,16 @@
     "src/lib/fuzzy-search.ts",
     "src/lib/keybinding-utils.ts",
     "src/lib/safe-listen.ts",
-    "src/lib/browser-mock.ts"
+    "src/lib/browser-mock.ts",
+    "src/hooks/useAppShortcuts.ts",
+    "src/hooks/useBrowser.ts",
+    "src/hooks/useGitInfo.ts",
+    "src/hooks/useKeyboardShortcuts.ts",
+    "src/hooks/useNotificationListener.ts",
+    "src/hooks/useThemeColors.ts",
+    "src/components/notifications/NotificationPanel.tsx",
+    "src/components/palette/CommandPalette.tsx",
+    "src/components/sidebar/Sidebar.tsx"
   ],
   "testRunner": "vitest",
   "vitest": {
@@ -23,9 +32,9 @@
     "fileName": "reports/mutation/html"
   },
   "thresholds": {
-    "high": 90,
-    "low": 75,
-    "break": 70
+    "high": 92,
+    "low": 80,
+    "break": 75
   },
   "concurrency": 4,
   "timeoutMS": 30000

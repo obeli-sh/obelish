@@ -208,6 +208,11 @@ impl WorkspaceState {
         new_pane_id: String,
         url: String,
     ) -> Result<PaneSplitResult, WorkspaceError> {
+        if url.contains('\0') {
+            return Err(WorkspaceError::InvalidUrl {
+                reason: format!("URL contains null bytes: {}", url.replace('\0', "\\0")),
+            });
+        }
         let lower_url = url.to_lowercase();
         if !lower_url.starts_with("http://") && !lower_url.starts_with("https://") {
             return Err(WorkspaceError::InvalidUrl {
@@ -1849,6 +1854,264 @@ mod tests {
     }
 
     #[test]
+    fn open_browser_pane_rejects_vbscript_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "vbscript:MsgBox".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_blob_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "blob:http://example.com/some-blob-id".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_empty_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_whitespace_prefix() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "  http://example.com".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_null_bytes() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "http://example.com\0malicious".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_http() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "http://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_https() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "https://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_mixed_case_javascript() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "JavaScript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_mixed_case_https() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "HTTPS://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_percent_encoded_scheme() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "%6aavascript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_schemeless_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "example.com".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
     fn layout_tree_serialize_roundtrip() {
         let layout = LayoutNode::Split {
             direction: SplitDirection::Horizontal,
@@ -2906,5 +3169,53 @@ mod tests {
                 prop_assert_eq!(state.active_workspace_id(), Some(ws3.id.as_str()));
             }
         }
+    }
+
+    #[test]
+    fn error_messages_do_not_leak_internal_paths() {
+        let mut state = new_state();
+        state.create_workspace(
+            "WS".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+
+        // Test various error cases
+        let err = state.close_pane("nonexistent").unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("C:\\"),
+            "Error should not contain internal paths: {msg}"
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "bp-1".to_string(),
+                "javascript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
     }
 }
