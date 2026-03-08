@@ -424,6 +424,341 @@ mod tests {
         assert!(!session.workspaces[0].is_root_worktree);
     }
 
+    // --- Fault injection tests ---
+
+    /// A mock backend that always fails on save (simulates disk full).
+    struct FailingSaveBackend;
+
+    impl PersistenceBackend for FailingSaveBackend {
+        fn save(&self, _key: &str, _data: &[u8]) -> Result<(), crate::error::PersistenceError> {
+            Err(crate::error::PersistenceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "disk full",
+            )))
+        }
+        fn load(&self, _key: &str) -> Result<Option<Vec<u8>>, crate::error::PersistenceError> {
+            Ok(None)
+        }
+        fn delete(&self, _key: &str) -> Result<(), crate::error::PersistenceError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn disk_full_simulation_save_returns_error() {
+        let backend = Arc::new(FailingSaveBackend);
+        let manager = SessionManager::new(backend);
+        let state = make_test_workspace_state();
+
+        let result = manager.save(&state);
+        assert!(result.is_err());
+        // Verify it's an IO error with the disk full message
+        match result {
+            Err(crate::error::PersistenceError::Io(e)) => {
+                assert_eq!(e.to_string(), "disk full");
+            }
+            other => panic!("Expected Io(disk full) error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn disk_full_simulation_save_if_dirty_returns_error() {
+        let backend = Arc::new(FailingSaveBackend);
+        let manager = SessionManager::new(backend);
+        let state = make_test_workspace_state();
+
+        manager.mark_dirty();
+        let result = manager.save_if_dirty(&state);
+        assert!(result.is_err());
+        // Dirty flag should still be set since save failed
+        // (save_if_dirty calls save which calls save_from_session which
+        // only clears dirty on success — but the error happens in backend.save
+        // before dirty.store(false) is reached)
+    }
+
+    #[test]
+    fn corrupted_data_recovery_returns_error_not_panic() {
+        let (_dir, manager) = setup();
+        let state = make_test_workspace_state();
+
+        // Save valid data first
+        manager.save(&state).unwrap();
+
+        // Overwrite with garbage bytes
+        manager
+            .backend
+            .save(SESSION_KEY, &[0xFF, 0xFE, 0x00, 0x01, 0xAB, 0xCD])
+            .unwrap();
+
+        // Attempting to load should return an error, not panic
+        let result = manager.load();
+        assert!(result.is_err());
+        match result {
+            Err(crate::error::PersistenceError::Corrupted { .. }) => {} // expected
+            other => panic!("Expected Corrupted error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_file_recovery_returns_error_not_panic() {
+        let (_dir, manager) = setup();
+
+        // Save an empty file
+        manager.backend.save(SESSION_KEY, b"").unwrap();
+
+        // Should return an error (empty JSON is not valid), not panic
+        let result = manager.load();
+        assert!(result.is_err());
+        match result {
+            Err(crate::error::PersistenceError::Corrupted { .. }) => {} // expected
+            other => panic!("Expected Corrupted error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn concurrent_mark_dirty_save_if_dirty() {
+        let (_dir, manager) = setup();
+        let state = make_test_workspace_state();
+
+        // Rapidly mark dirty and save_if_dirty in sequence
+        for _ in 0..100 {
+            manager.mark_dirty();
+            assert!(manager.is_dirty());
+            let saved = manager.save_if_dirty(&state).unwrap();
+            assert!(saved);
+            assert!(!manager.is_dirty());
+        }
+
+        // Verify final state is loadable
+        let loaded = manager.load().unwrap();
+        assert!(loaded.is_some());
+    }
+
+    #[test]
+    fn save_if_dirty_resets_flag_atomically() {
+        let (_dir, manager) = setup();
+        let state = make_test_workspace_state();
+
+        // Mark dirty, then save_if_dirty should clear the flag
+        manager.mark_dirty();
+        assert!(manager.is_dirty());
+        manager.save_if_dirty(&state).unwrap();
+        assert!(!manager.is_dirty());
+
+        // Second call should not save (flag was cleared)
+        let saved = manager.save_if_dirty(&state).unwrap();
+        assert!(!saved);
+    }
+
+    #[test]
+    fn clean_shutdown_marker_write_check_delete_check() {
+        // Explicit full roundtrip: write → check true → delete → check false
+        let (_dir, manager) = setup();
+
+        // Initially no marker
+        assert!(!manager.check_clean_shutdown().unwrap());
+
+        // Write marker
+        manager.write_clean_shutdown_marker().unwrap();
+        assert!(manager.check_clean_shutdown().unwrap());
+
+        // Write again (idempotent)
+        manager.write_clean_shutdown_marker().unwrap();
+        assert!(manager.check_clean_shutdown().unwrap());
+
+        // Delete marker
+        manager.delete_clean_shutdown_marker().unwrap();
+        assert!(!manager.check_clean_shutdown().unwrap());
+
+        // Delete again (idempotent)
+        manager.delete_clean_shutdown_marker().unwrap();
+        assert!(!manager.check_clean_shutdown().unwrap());
+    }
+
+    #[test]
+    fn save_load_roundtrip_complex_state_with_browser_panes() {
+        use obelisk_protocol::PaneType;
+
+        let (_dir, manager) = setup();
+
+        // Build a complex session state with multiple workspaces, surfaces,
+        // panes (including a browser pane type), and project metadata.
+        let session = SessionState {
+            workspaces: vec![
+                WorkspaceInfo {
+                    id: "ws-1".to_string(),
+                    name: "Dev Workspace".to_string(),
+                    surfaces: vec![
+                        obelisk_protocol::SurfaceInfo {
+                            id: "surf-1".to_string(),
+                            name: "Main".to_string(),
+                            layout: LayoutNode::Split {
+                                direction: SplitDirection::Horizontal,
+                                children: Box::new([
+                                    LayoutNode::Leaf {
+                                        pane_id: "pane-1".to_string(),
+                                        pty_id: "pty-1".to_string(),
+                                    },
+                                    LayoutNode::Leaf {
+                                        pane_id: "pane-2".to_string(),
+                                        pty_id: "pty-2".to_string(),
+                                    },
+                                ]),
+                                sizes: [0.5, 0.5],
+                            },
+                        },
+                        obelisk_protocol::SurfaceInfo {
+                            id: "surf-2".to_string(),
+                            name: "Browser".to_string(),
+                            layout: LayoutNode::Leaf {
+                                pane_id: "pane-browser".to_string(),
+                                pty_id: String::new(),
+                            },
+                        },
+                    ],
+                    active_surface_index: 0,
+                    created_at: 1700000000,
+                    project_id: "proj-1".to_string(),
+                    worktree_path: "/home/user/project".to_string(),
+                    branch_name: Some("feature-branch".to_string()),
+                    is_root_worktree: false,
+                },
+                WorkspaceInfo {
+                    id: "ws-2".to_string(),
+                    name: "Docs Workspace".to_string(),
+                    surfaces: vec![obelisk_protocol::SurfaceInfo {
+                        id: "surf-3".to_string(),
+                        name: "Editor".to_string(),
+                        layout: LayoutNode::Leaf {
+                            pane_id: "pane-3".to_string(),
+                            pty_id: "pty-3".to_string(),
+                        },
+                    }],
+                    active_surface_index: 0,
+                    created_at: 1700000100,
+                    project_id: "proj-2".to_string(),
+                    worktree_path: "/home/user/docs".to_string(),
+                    branch_name: None,
+                    is_root_worktree: true,
+                },
+            ],
+            active_workspace_id: Some("ws-1".to_string()),
+            panes: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "pane-1".to_string(),
+                    PaneInfo {
+                        id: "pane-1".to_string(),
+                        pty_id: "pty-1".to_string(),
+                        pane_type: PaneType::Terminal,
+                        cwd: Some("/home/user/project".to_string()),
+                        url: None,
+                    },
+                );
+                m.insert(
+                    "pane-2".to_string(),
+                    PaneInfo {
+                        id: "pane-2".to_string(),
+                        pty_id: "pty-2".to_string(),
+                        pane_type: PaneType::Terminal,
+                        cwd: Some("/tmp".to_string()),
+                        url: None,
+                    },
+                );
+                m.insert(
+                    "pane-browser".to_string(),
+                    PaneInfo {
+                        id: "pane-browser".to_string(),
+                        pty_id: String::new(),
+                        pane_type: PaneType::Browser,
+                        cwd: None,
+                        url: Some("https://example.com".to_string()),
+                    },
+                );
+                m.insert(
+                    "pane-3".to_string(),
+                    PaneInfo {
+                        id: "pane-3".to_string(),
+                        pty_id: "pty-3".to_string(),
+                        pane_type: PaneType::Terminal,
+                        cwd: None,
+                        url: None,
+                    },
+                );
+                m
+            },
+        };
+
+        // Save and reload
+        manager.save_from_session(&session).unwrap();
+        let loaded = manager.load().unwrap().unwrap();
+
+        // Verify everything is preserved
+        assert_eq!(loaded, session);
+        assert_eq!(loaded.workspaces.len(), 2);
+        assert_eq!(loaded.panes.len(), 4);
+
+        // Verify workspace metadata
+        assert_eq!(loaded.workspaces[0].project_id, "proj-1");
+        assert_eq!(
+            loaded.workspaces[0].branch_name,
+            Some("feature-branch".to_string())
+        );
+        assert!(!loaded.workspaces[0].is_root_worktree);
+        assert!(loaded.workspaces[1].is_root_worktree);
+
+        // Verify browser pane
+        let browser_pane = loaded.panes.get("pane-browser").unwrap();
+        assert_eq!(browser_pane.pane_type, PaneType::Browser);
+        assert!(browser_pane.pty_id.is_empty());
+        assert!(browser_pane.cwd.is_none());
+        assert_eq!(browser_pane.url, Some("https://example.com".to_string()));
+
+        // Verify split layout preserved
+        match &loaded.workspaces[0].surfaces[0].layout {
+            LayoutNode::Split {
+                direction,
+                sizes,
+                children,
+            } => {
+                assert!(matches!(direction, SplitDirection::Horizontal));
+                assert!((sizes[0] - 0.5).abs() < f64::EPSILON);
+                assert!((sizes[1] - 0.5).abs() < f64::EPSILON);
+                assert_eq!(children.len(), 2);
+            }
+            _ => panic!("Expected split layout"),
+        }
+    }
+
+    #[test]
+    fn load_after_truncation_returns_corrupted_error() {
+        let (dir, manager) = setup();
+
+        // Save a valid complex state
+        let state = make_complex_workspace_state();
+        manager.save(&state).unwrap();
+
+        // Read the file, truncate to half its length, and write back
+        let file_path = dir.path().join("workspace_state.json");
+        let data = std::fs::read(&file_path).unwrap();
+        assert!(data.len() > 10, "saved data should be non-trivial");
+        let truncated = &data[..data.len() / 2];
+        std::fs::write(&file_path, truncated).unwrap();
+
+        // Load should return a Corrupted error (truncated JSON is not valid)
+        let result = manager.load();
+        assert!(result.is_err());
+        match result {
+            Err(PersistenceError::Corrupted { reason }) => {
+                assert!(
+                    reason.contains("deserialize"),
+                    "error should mention deserialization: {reason}"
+                );
+            }
+            other => panic!("Expected Corrupted error, got: {other:?}"),
+        }
+    }
+
     #[test]
     fn roundtrip_with_project_and_worktree_fields() {
         let mut state = WorkspaceState::new();
@@ -450,5 +785,163 @@ mod tests {
             Some("main".to_string())
         );
         assert!(deserialized.workspaces[0].is_root_worktree);
+    }
+
+    // --- Corrupted session recovery tests ---
+
+    #[test]
+    fn partial_json_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"{\"workspaces\": [")
+            .unwrap();
+        let result = manager.load();
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn wrong_schema_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"{\"foo\": \"bar\"}")
+            .unwrap();
+        let result = manager.load();
+        // Should fail because required fields are missing
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn duplicate_pane_ids_deserializes_last_wins() {
+        let json = r#"{
+            "workspaces": [{
+                "id": "ws-1", "name": "WS", "surfaces": [{"id": "s-1", "name": "S", "layout": {"type": "leaf", "paneId": "pane-1", "ptyId": "pty-1"}}],
+                "activeSurfaceIndex": 0, "createdAt": 100
+            }],
+            "activeWorkspaceId": "ws-1",
+            "panes": {
+                "pane-1": {"id": "pane-1", "ptyId": "pty-1", "paneType": "terminal", "cwd": null}
+            }
+        }"#;
+        let session: SessionState = serde_json::from_str(json).unwrap();
+        assert_eq!(session.panes.len(), 1);
+    }
+
+    #[test]
+    fn large_session_roundtrip() {
+        let (_dir, manager) = setup();
+        let mut state = WorkspaceState::new();
+        for i in 0..100 {
+            state.create_workspace(
+                format!("WS-{i}"),
+                format!("pane-{i}"),
+                format!("pty-{i}"),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+        }
+        manager.save(&state).unwrap();
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 100);
+    }
+
+    #[test]
+    fn concurrent_save_and_load() {
+        let (_dir, manager) = setup();
+        let manager = std::sync::Arc::new(manager);
+        let state = make_complex_workspace_state();
+
+        // Save once first
+        manager.save(&state).unwrap();
+
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let m = manager.clone();
+                let s = state.to_session_state();
+                std::thread::spawn(move || {
+                    if i % 2 == 0 {
+                        m.save_from_session(&s).unwrap();
+                    } else {
+                        let _ = m.load();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Final load should succeed
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 2);
+    }
+
+    #[test]
+    fn save_overwrites_previous() {
+        let (_dir, manager) = setup();
+        let state1 = make_test_workspace_state();
+        manager.save(&state1).unwrap();
+
+        let mut state2 = WorkspaceState::new();
+        state2.create_workspace(
+            "New WS".to_string(),
+            "pane-new".to_string(),
+            "pty-new".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+        state2.create_workspace(
+            "Another".to_string(),
+            "pane-another".to_string(),
+            "pty-another".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+        manager.save(&state2).unwrap();
+
+        let loaded = manager.load().unwrap().unwrap();
+        assert_eq!(loaded.workspaces.len(), 2);
+        assert_eq!(loaded.workspaces[0].name, "New WS");
+    }
+
+    #[test]
+    fn binary_garbage_returns_corrupted_error() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, &[0xFF, 0xFE, 0xFD, 0x00, 0x01])
+            .unwrap();
+        let result = manager.load();
+        assert!(matches!(result, Err(PersistenceError::Corrupted { .. })));
+    }
+
+    #[test]
+    fn corrupted_error_does_not_leak_paths() {
+        let (_dir, manager) = setup();
+        manager
+            .backend
+            .save(SESSION_KEY, b"invalid json{{{")
+            .unwrap();
+        let err = manager.load().unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("C:\\"),
+            "Error should not contain internal paths: {msg}"
+        );
     }
 }

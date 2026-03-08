@@ -249,4 +249,91 @@ curl      12347 user  5u   IPv4 123458      0t0  TCP 192.168.1.1:54321->93.184.2
         let _ = parse_lsof_output(garbage);
         let _ = parse_netstat_output(garbage);
     }
+
+    // --- Property-based tests ---
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(1000))]
+            #[test]
+            fn random_string_to_proc_net_tcp_no_panic(input in "\\PC{0,500}") {
+                let _ = parse_proc_net_tcp(&input);
+            }
+
+            #[test]
+            fn random_string_to_lsof_no_panic(input in "\\PC{0,500}") {
+                let _ = parse_lsof_output(&input);
+            }
+
+            #[test]
+            fn random_string_to_netstat_no_panic(input in "\\PC{0,500}") {
+                let _ = parse_netstat_output(&input);
+            }
+
+            #[test]
+            fn proc_net_tcp_ports_in_valid_range(input in "\\PC{0,500}") {
+                let results = parse_proc_net_tcp(&input);
+                for port_info in &results {
+                    prop_assert!(port_info.port >= 1 || port_info.port == 0,
+                        "port {} out of u16 range", port_info.port);
+                    prop_assert_eq!(&port_info.protocol, "tcp");
+                }
+            }
+
+            #[test]
+            fn lsof_ports_in_valid_range(input in "\\PC{0,500}") {
+                let results = parse_lsof_output(&input);
+                for port_info in &results {
+                    prop_assert!(port_info.port >= 1 || port_info.port == 0,
+                        "port {} out of u16 range", port_info.port);
+                    prop_assert_eq!(&port_info.protocol, "tcp");
+                }
+            }
+
+            #[test]
+            fn netstat_ports_valid_range_and_protocol(input in "\\PC{0,500}") {
+                let results = parse_netstat_output(&input);
+                for port_info in &results {
+                    prop_assert!(port_info.port >= 1 || port_info.port == 0,
+                        "port {} out of u16 range", port_info.port);
+                    prop_assert!(
+                        port_info.protocol == "tcp" || port_info.protocol == "udp",
+                        "unexpected protocol: {}", port_info.protocol
+                    );
+                }
+            }
+
+            #[test]
+            fn proc_net_tcp_valid_input_returns_correct_ports(
+                port in 1u16..=65535u16
+            ) {
+                let hex_port = format!("{:04X}", port);
+                let input = format!(
+                    "  sl  local_address rem_address   st\n   0: 00000000:{hex_port} 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 12345"
+                );
+                let results = parse_proc_net_tcp(&input);
+                prop_assert_eq!(results.len(), 1);
+                prop_assert_eq!(results[0].port, port);
+                prop_assert_eq!(&results[0].protocol, "tcp");
+            }
+
+            #[test]
+            fn netstat_valid_input_returns_correct_ports(
+                port in 1u16..=65535u16,
+                pid in 1u32..100000u32
+            ) {
+                let input = format!(
+                    "  Proto  Local Address          Foreign Address        State           PID\n  TCP    0.0.0.0:{port}             0.0.0.0:0              LISTENING       {pid}"
+                );
+                let results = parse_netstat_output(&input);
+                prop_assert_eq!(results.len(), 1);
+                prop_assert_eq!(results[0].port, port);
+                prop_assert_eq!(&results[0].protocol, "tcp");
+                prop_assert_eq!(results[0].pid, Some(pid));
+            }
+        }
+    }
 }

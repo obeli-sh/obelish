@@ -1,0 +1,38 @@
+name: Benchmark Gate
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+
+permissions:
+  contents: read
+
+jobs:
+  bench-compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+      - name: Install critcmp
+        run: cargo install critcmp
+      - name: Run benchmarks (PR branch)
+        run: cargo bench --bench benchmarks -- --save-baseline pr
+      - name: Run benchmarks (base branch)
+        run: |
+          git stash
+          git checkout $BASE_SHA
+          cargo bench --bench benchmarks -- --save-baseline base
+          git checkout -
+          git stash pop || true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: Compare benchmarks (15% regression threshold)
+        run: critcmp base pr --threshold 15

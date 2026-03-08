@@ -26,6 +26,11 @@ describe('settingsStore', () => {
       terminalFontFamily: '"Fira Mono", monospace',
       terminalFontSize: 14,
       scrollbackLines: 5000,
+      defaultShell: '',
+      preferredWorkspaceLayout: 'single',
+      showAllProjects: false,
+      uiFontFamily: "'Fira Mono', monospace",
+      uiFontSize: 13,
     });
   });
 
@@ -199,6 +204,99 @@ describe('settingsStore', () => {
       expect(typeof state.resetKeybinding).toBe('function');
       expect(typeof state.resetAllKeybindings).toBe('function');
       expect(typeof state._syncSettings).toBe('function');
+    });
+
+    it('defaults defaultShell to empty string when not provided in Rust payload', () => {
+      const rustPayload: RustSettings = {
+        keybindings: {},
+        theme: 'dark',
+        terminalFontFamily: 'monospace',
+        terminalFontSize: 14,
+        scrollbackLines: 5000,
+      };
+      useSettingsStore.getState().updateDefaultShell('/usr/bin/fish');
+      useSettingsStore.getState()._syncSettings(rustPayload);
+      expect(useSettingsStore.getState().defaultShell).toBe('');
+    });
+  });
+
+  describe('updatePreferredWorkspaceLayout', () => {
+    it('updates preferred workspace layout to side-by-side', () => {
+      useSettingsStore.getState().updatePreferredWorkspaceLayout('side-by-side');
+      expect(useSettingsStore.getState().preferredWorkspaceLayout).toBe('side-by-side');
+    });
+
+    it('updates preferred workspace layout to stacked', () => {
+      useSettingsStore.getState().updatePreferredWorkspaceLayout('stacked');
+      expect(useSettingsStore.getState().preferredWorkspaceLayout).toBe('stacked');
+    });
+
+    it('has default preferred workspace layout of single', () => {
+      expect(useSettingsStore.getState().preferredWorkspaceLayout).toBe('single');
+    });
+  });
+
+  describe('updateShowAllProjects', () => {
+    it('updates showAllProjects to true', () => {
+      useSettingsStore.getState().updateShowAllProjects(true);
+      expect(useSettingsStore.getState().showAllProjects).toBe(true);
+    });
+
+    it('updates showAllProjects back to false', () => {
+      useSettingsStore.getState().updateShowAllProjects(true);
+      useSettingsStore.getState().updateShowAllProjects(false);
+      expect(useSettingsStore.getState().showAllProjects).toBe(false);
+    });
+
+    it('has default showAllProjects of false', () => {
+      expect(useSettingsStore.getState().showAllProjects).toBe(false);
+    });
+  });
+
+  describe('updateUiFontFamily', () => {
+    it('updates UI font family', () => {
+      useSettingsStore.getState().updateUiFontFamily('Inter');
+      expect(useSettingsStore.getState().uiFontFamily).toBe('Inter');
+    });
+  });
+
+  describe('updateUiFontSize', () => {
+    it('updates UI font size', () => {
+      useSettingsStore.getState().updateUiFontSize(16);
+      expect(useSettingsStore.getState().uiFontSize).toBe(16);
+    });
+
+    it('has default UI font size of 13', () => {
+      expect(useSettingsStore.getState().uiFontSize).toBe(13);
+    });
+  });
+
+  describe('updateThemeColor', () => {
+    it('updates a specific theme color', () => {
+      useSettingsStore.getState().updateThemeColor('accentColor', '#ff0000');
+      expect(useSettingsStore.getState().themeColors.accentColor).toBe('#ff0000');
+    });
+
+    it('does not affect other theme colors', () => {
+      const before = { ...useSettingsStore.getState().themeColors };
+      useSettingsStore.getState().updateThemeColor('accentColor', '#ff0000');
+      const after = useSettingsStore.getState().themeColors;
+      expect(after.appBackground).toBe(before.appBackground);
+      expect(after.textPrimary).toBe(before.textPrimary);
+    });
+  });
+
+  describe('resetKeybinding edge cases', () => {
+    it('resets only the specified command keybinding', () => {
+      const customBinding = kb('z', true, true);
+      useSettingsStore.getState().updateKeybinding('pane.close', customBinding);
+      useSettingsStore.getState().updateKeybinding('workspace.create', kb('m', true));
+
+      useSettingsStore.getState().resetKeybinding('pane.close');
+
+      const defaultBinding = getCommands().find((c) => c.id === 'pane.close')?.defaultBinding;
+      expect(useSettingsStore.getState().keybindings['pane.close']).toEqual(defaultBinding);
+      expect(useSettingsStore.getState().keybindings['workspace.create']).toEqual(kb('m', true));
     });
   });
 });

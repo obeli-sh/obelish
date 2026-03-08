@@ -208,6 +208,11 @@ impl WorkspaceState {
         new_pane_id: String,
         url: String,
     ) -> Result<PaneSplitResult, WorkspaceError> {
+        if url.contains('\0') {
+            return Err(WorkspaceError::InvalidUrl {
+                reason: format!("URL contains null bytes: {}", url.replace('\0', "\\0")),
+            });
+        }
         let lower_url = url.to_lowercase();
         if !lower_url.starts_with("http://") && !lower_url.starts_with("https://") {
             return Err(WorkspaceError::InvalidUrl {
@@ -1849,6 +1854,264 @@ mod tests {
     }
 
     #[test]
+    fn open_browser_pane_rejects_vbscript_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "vbscript:MsgBox".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_blob_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "blob:http://example.com/some-blob-id".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_empty_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_whitespace_prefix() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "  http://example.com".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_null_bytes() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "http://example.com\0malicious".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_http() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "http://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_https() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "https://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_mixed_case_javascript() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "JavaScript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_accepts_mixed_case_https() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let result = state.open_browser_pane(
+            "pane-1",
+            SplitDirection::Horizontal,
+            "browser-1".to_string(),
+            "HTTPS://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_percent_encoded_scheme() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "%6aavascript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
+    fn open_browser_pane_rejects_schemeless_url() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Test".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            true,
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "browser-1".to_string(),
+                "example.com".to_string(),
+            )
+            .unwrap_err();
+        assert!(matches!(err, WorkspaceError::InvalidUrl { .. }));
+    }
+
+    #[test]
     fn layout_tree_serialize_roundtrip() {
         let layout = LayoutNode::Split {
             direction: SplitDirection::Horizontal,
@@ -2477,5 +2740,482 @@ mod tests {
         assert_eq!(ws.worktree_path, "/home/user/myproject");
         assert_eq!(ws.branch_name, Some("main".to_string()));
         assert!(ws.is_root_worktree);
+    }
+
+    // --- Stress tests ---
+
+    #[test]
+    fn stress_create_100_workspaces() {
+        let mut state = new_state();
+        let mut ids = Vec::with_capacity(100);
+
+        for i in 0..100 {
+            let ws = state.create_workspace(
+                format!("WS-{i}"),
+                format!("pane-{i}"),
+                format!("pty-{i}"),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            ids.push(ws.id.clone());
+        }
+
+        assert_eq!(state.list_workspaces().len(), 100);
+
+        // Last created should be active
+        assert_eq!(state.active_workspace_id(), Some(ids[99].as_str()));
+
+        // Every workspace should be retrievable
+        for (i, id) in ids.iter().enumerate() {
+            let ws = state.get_workspace(id).expect("workspace should exist");
+            assert_eq!(ws.name, format!("WS-{i}"));
+        }
+
+        // Every pane should exist
+        for i in 0..100 {
+            assert!(
+                state.get_pane(&format!("pane-{i}")).is_some(),
+                "pane-{i} should exist"
+            );
+        }
+    }
+
+    #[test]
+    fn stress_50_sequential_splits() {
+        let mut state = new_state();
+        state.create_workspace(
+            "Stress".to_string(),
+            "pane-0".to_string(),
+            "pty-0".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+
+        // Perform 50 splits, always splitting pane-0
+        for i in 1..=50 {
+            let direction = if i % 2 == 0 {
+                SplitDirection::Horizontal
+            } else {
+                SplitDirection::Vertical
+            };
+            state
+                .split_pane("pane-0", direction, format!("pane-{i}"), format!("pty-{i}"))
+                .unwrap();
+        }
+
+        // Should have 51 panes total (1 original + 50 splits)
+        let ws = &state.list_workspaces()[0];
+        let mut pane_ids = Vec::new();
+        collect_all_pane_ids_stress(&ws.surfaces[0].layout, &mut pane_ids);
+        assert_eq!(pane_ids.len(), 51);
+
+        // Every pane should be present
+        for i in 0..=50 {
+            assert!(
+                state.get_pane(&format!("pane-{i}")).is_some(),
+                "pane-{i} should still exist after 50 splits"
+            );
+            assert!(
+                pane_ids.contains(&format!("pane-{i}")),
+                "pane-{i} should be in layout after 50 splits"
+            );
+        }
+    }
+
+    #[test]
+    fn stress_create_split_close_cycle() {
+        let mut state = new_state();
+
+        // Run 20 cycles of: create workspace, split, close pane, close workspace
+        for cycle in 0..20 {
+            // Ensure we always have at least one workspace so we can close the test one
+            if state.list_workspaces().is_empty() {
+                state.create_workspace(
+                    "Anchor".to_string(),
+                    format!("anchor-pane-{cycle}"),
+                    format!("anchor-pty-{cycle}"),
+                    String::new(),
+                    String::new(),
+                    None,
+                    false,
+                );
+            }
+
+            let ws = state.create_workspace(
+                format!("Cycle-{cycle}"),
+                format!("cycle-pane-{cycle}-0"),
+                format!("cycle-pty-{cycle}-0"),
+                String::new(),
+                String::new(),
+                None,
+                false,
+            );
+            let ws_id = ws.id.clone();
+
+            // Split 5 times
+            for s in 1..=5 {
+                state
+                    .split_pane(
+                        &format!("cycle-pane-{cycle}-0"),
+                        SplitDirection::Horizontal,
+                        format!("cycle-pane-{cycle}-{s}"),
+                        format!("cycle-pty-{cycle}-{s}"),
+                    )
+                    .unwrap();
+            }
+
+            // Close 3 panes
+            for s in (3..=5).rev() {
+                state
+                    .close_pane(&format!("cycle-pane-{cycle}-{s}"))
+                    .unwrap();
+            }
+
+            // Close the workspace
+            state.close_workspace(&ws_id).unwrap();
+            assert!(state.get_workspace(&ws_id).is_none());
+        }
+
+        // After all cycles, state should still be consistent
+        assert!(
+            !state.list_workspaces().is_empty(),
+            "state should have at least one workspace after stress cycles"
+        );
+        assert!(
+            state.active_workspace_id().is_some(),
+            "there should be an active workspace after stress cycles"
+        );
+
+        // Verify no ghost panes from closed workspaces
+        for cycle in 0..20 {
+            for s in 0..=5 {
+                let pane_id = format!("cycle-pane-{cycle}-{s}");
+                assert!(
+                    state.get_pane(&pane_id).is_none(),
+                    "pane {pane_id} should have been cleaned up"
+                );
+            }
+        }
+    }
+
+    fn collect_all_pane_ids_stress(layout: &LayoutNode, ids: &mut Vec<String>) {
+        match layout {
+            LayoutNode::Leaf { pane_id, .. } => ids.push(pane_id.clone()),
+            LayoutNode::Split { children, .. } => {
+                collect_all_pane_ids_stress(&children[0], ids);
+                collect_all_pane_ids_stress(&children[1], ids);
+            }
+        }
+    }
+
+    // --- Property-based tests ---
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn count_panes(layout: &LayoutNode) -> usize {
+            match layout {
+                LayoutNode::Leaf { .. } => 1,
+                LayoutNode::Split { children, .. } => {
+                    count_panes(&children[0]) + count_panes(&children[1])
+                }
+            }
+        }
+
+        fn collect_all_pane_ids(layout: &LayoutNode, ids: &mut Vec<String>) {
+            match layout {
+                LayoutNode::Leaf { pane_id, .. } => ids.push(pane_id.clone()),
+                LayoutNode::Split { children, .. } => {
+                    collect_all_pane_ids(&children[0], ids);
+                    collect_all_pane_ids(&children[1], ids);
+                }
+            }
+        }
+
+        fn validate_layout_tree(layout: &LayoutNode) -> bool {
+            match layout {
+                LayoutNode::Leaf { .. } => true,
+                LayoutNode::Split { children, .. } => {
+                    // Every split must have exactly 2 children (enforced by Box<[LayoutNode; 2]>)
+                    // and both children must be valid
+                    validate_layout_tree(&children[0]) && validate_layout_tree(&children[1])
+                }
+            }
+        }
+
+        fn arb_direction() -> impl Strategy<Value = SplitDirection> {
+            prop_oneof![
+                Just(SplitDirection::Horizontal),
+                Just(SplitDirection::Vertical),
+            ]
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(1000))]
+            #[test]
+            fn layout_valid_after_splits(num_splits in 1u32..10) {
+                let mut state = new_state();
+                state.create_workspace(
+                    "Test".to_string(),
+                    "pane-0".to_string(),
+                    "pty-0".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+
+                // Perform a series of splits, always splitting the first pane
+                for i in 1..=num_splits {
+                    let dir = if i % 2 == 0 {
+                        SplitDirection::Horizontal
+                    } else {
+                        SplitDirection::Vertical
+                    };
+                    state
+                        .split_pane(
+                            "pane-0",
+                            dir,
+                            format!("pane-{i}"),
+                            format!("pty-{i}"),
+                        )
+                        .unwrap();
+                }
+
+                let ws = &state.list_workspaces()[0];
+                let layout = &ws.surfaces[0].layout;
+                prop_assert!(validate_layout_tree(layout));
+                // After num_splits splits, we should have num_splits + 1 panes
+                prop_assert_eq!(count_panes(layout), (num_splits + 1) as usize);
+            }
+
+            #[test]
+            fn split_then_close_returns_to_single_pane(dir in arb_direction()) {
+                let mut state = new_state();
+                state.create_workspace(
+                    "Test".to_string(),
+                    "pane-1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+
+                state
+                    .split_pane("pane-1", dir, "pane-2".to_string(), "pty-2".to_string())
+                    .unwrap();
+
+                let result = state.close_pane("pane-2").unwrap();
+                prop_assert!(!result.workspace_closed);
+
+                let ws = &state.list_workspaces()[0];
+                match &ws.surfaces[0].layout {
+                    LayoutNode::Leaf { pane_id, .. } => {
+                        prop_assert_eq!(pane_id, "pane-1");
+                    }
+                    _ => prop_assert!(false, "expected single leaf after close"),
+                }
+            }
+
+            #[test]
+            fn swap_is_symmetric(dir in arb_direction()) {
+                let mut state = new_state();
+                state.create_workspace(
+                    "Test".to_string(),
+                    "pane-1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+
+                state
+                    .split_pane("pane-1", dir, "pane-2".to_string(), "pty-2".to_string())
+                    .unwrap();
+
+                // Capture original layout
+                let original_layout = state.list_workspaces()[0].surfaces[0].layout.clone();
+
+                // swap(a,b) then swap(b,a) should return to original
+                state.swap_panes("pane-1", "pane-2").unwrap();
+                state.swap_panes("pane-2", "pane-1").unwrap();
+
+                let restored_layout = &state.list_workspaces()[0].surfaces[0].layout;
+                prop_assert_eq!(&original_layout, restored_layout);
+            }
+
+            #[test]
+            fn every_pane_findable_via_find_workspace_by_pane(num_splits in 1u32..8) {
+                let mut state = new_state();
+                state.create_workspace(
+                    "Test".to_string(),
+                    "pane-0".to_string(),
+                    "pty-0".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+
+                for i in 1..=num_splits {
+                    let target = format!("pane-{}", i - 1);
+                    state
+                        .split_pane(
+                            &target,
+                            SplitDirection::Horizontal,
+                            format!("pane-{i}"),
+                            format!("pty-{i}"),
+                        )
+                        .unwrap();
+                }
+
+                let ws = &state.list_workspaces()[0];
+                let mut pane_ids = Vec::new();
+                collect_all_pane_ids(&ws.surfaces[0].layout, &mut pane_ids);
+
+                for pid in &pane_ids {
+                    let found = state.find_workspace_by_pane(pid);
+                    prop_assert!(found.is_some(), "pane {} not found via find_workspace_by_pane", pid);
+                    prop_assert_eq!(&found.unwrap().id, &ws.id);
+                }
+            }
+
+            #[test]
+            fn close_pane_reduces_count_by_one(num_splits in 1u32..8) {
+                let mut state = new_state();
+                state.create_workspace(
+                    "Test".to_string(),
+                    "pane-0".to_string(),
+                    "pty-0".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+
+                for i in 1..=num_splits {
+                    let target = format!("pane-{}", i - 1);
+                    state
+                        .split_pane(
+                            &target,
+                            SplitDirection::Horizontal,
+                            format!("pane-{i}"),
+                            format!("pty-{i}"),
+                        )
+                        .unwrap();
+                }
+
+                let ws = &state.list_workspaces()[0];
+                let count_before = count_panes(&ws.surfaces[0].layout);
+
+                // Close the last pane we created
+                let pane_to_close = format!("pane-{num_splits}");
+                state.close_pane(&pane_to_close).unwrap();
+
+                let ws = &state.list_workspaces()[0];
+                let count_after = count_panes(&ws.surfaces[0].layout);
+                prop_assert_eq!(count_before - 1, count_after);
+            }
+
+            #[test]
+            fn create_workspace_always_sets_active(_name_len in 1u32..20) {
+                let mut state = new_state();
+
+                // Create first workspace
+                let ws1 = state.create_workspace(
+                    "First".to_string(),
+                    "pane-1".to_string(),
+                    "pty-1".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+                prop_assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
+
+                // Create second workspace — should become active
+                let ws2 = state.create_workspace(
+                    "Second".to_string(),
+                    "pane-2".to_string(),
+                    "pty-2".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+                prop_assert_eq!(state.active_workspace_id(), Some(ws2.id.as_str()));
+
+                // Focus back to ws1
+                state.focus_workspace(&ws1.id).unwrap();
+                prop_assert_eq!(state.active_workspace_id(), Some(ws1.id.as_str()));
+
+                // Create third workspace — should become active regardless of current focus
+                let ws3 = state.create_workspace(
+                    "Third".to_string(),
+                    "pane-3".to_string(),
+                    "pty-3".to_string(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    true,
+                );
+                prop_assert_eq!(state.active_workspace_id(), Some(ws3.id.as_str()));
+            }
+        }
+    }
+
+    #[test]
+    fn error_messages_do_not_leak_internal_paths() {
+        let mut state = new_state();
+        state.create_workspace(
+            "WS".to_string(),
+            "pane-1".to_string(),
+            "pty-1".to_string(),
+            String::new(),
+            String::new(),
+            None,
+            false,
+        );
+
+        // Test various error cases
+        let err = state.close_pane("nonexistent").unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("C:\\"),
+            "Error should not contain internal paths: {msg}"
+        );
+
+        let err = state
+            .open_browser_pane(
+                "pane-1",
+                SplitDirection::Horizontal,
+                "bp-1".to_string(),
+                "javascript:alert(1)".to_string(),
+            )
+            .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("/home/"),
+            "Error should not contain internal paths: {msg}"
+        );
+        assert!(
+            !msg.contains("/Users/"),
+            "Error should not contain internal paths: {msg}"
+        );
     }
 }

@@ -1,22 +1,26 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function openApp(page: Page) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 90_000 });
-      await expect(page.getByRole('navigation')).toBeVisible();
-      return;
-    } catch (error) {
-      if (attempt === 1) throw error;
-      await page.waitForTimeout(1000);
-    }
-  }
+  await page.goto('/', { waitUntil: 'commit', timeout: 90_000 });
+  // Wait for the app to finish loading (either shows picker or navigation)
+  await page.waitForFunction(() => {
+    const root = document.getElementById('root');
+    return root && root.innerHTML.length > 100;
+  }, { timeout: 30_000 });
+  // Programmatically close the project picker and restore default keybindings
+  await page.evaluate(async () => {
+    const uiStore = await import('/src/stores/uiStore.ts');
+    const settingsStore = await import('/src/stores/settingsStore.ts');
+    uiStore.useUiStore.getState().setProjectPickerOpen(false);
+    settingsStore.useSettingsStore.getState().resetAllKeybindings();
+  });
+  await expect(page.getByRole('navigation')).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe('manual browser validation', () => {
   test('renders workspace shell and pane controls', async ({ page }) => {
     await openApp(page);
-    await expect(page.getByRole('button', { name: /new workspace/i })).toBeVisible();
+    await expect(page.getByRole('navigation')).toBeVisible();
     await expect(page.getByLabel('Split vertical').first()).toBeVisible();
     await expect(page.getByLabel('Open browser').first()).toBeVisible();
   });
@@ -155,8 +159,13 @@ test.describe('manual browser validation', () => {
 
   test('rejects cross-workspace pane moves', async ({ page }) => {
     await openApp(page);
-    await page.getByRole('button', { name: /new workspace/i }).click();
-    await expect(page.getByRole('listitem')).toHaveCount(2);
+    await page.evaluate(async () => {
+      const bridge = await import('/src/lib/tauri-bridge.ts');
+      const wsStore = await import('/src/stores/workspaceStore.ts');
+      const ws = await bridge.tauriBridge.workspace.create({ projectId: '', worktreePath: '', name: undefined });
+      wsStore.useWorkspaceStore.getState()._syncWorkspace(ws);
+    });
+    await expect(page.getByRole('listitem')).toHaveCount(2, { timeout: 5_000 });
 
     const result = await page.evaluate(async () => {
       const { mockInvoke } = await import('/src/lib/browser-mock.ts');

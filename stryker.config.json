@@ -1,14 +1,42 @@
 {
   "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "mutate": [
+    "src/stores/workspaceStore.ts",
+    "src/stores/uiStore.ts",
+    "src/stores/settingsStore.ts",
+    "src/stores/projectStore.ts",
+    "src/stores/notificationStore.ts",
+    "src/lib/tauri-bridge.ts",
+    "src/lib/commands.ts",
+    "src/lib/auto-split.ts",
+    "src/lib/fuzzy-search.ts",
+    "src/lib/keybinding-utils.ts",
+    "src/lib/safe-listen.ts",
+    "src/lib/browser-mock.ts",
+    "src/hooks/useAppShortcuts.ts",
+    "src/hooks/useBrowser.ts",
+    "src/hooks/useGitInfo.ts",
+    "src/hooks/useKeyboardShortcuts.ts",
+    "src/hooks/useNotificationListener.ts",
+    "src/hooks/useThemeColors.ts",
+    "src/components/notifications/NotificationPanel.tsx",
+    "src/components/palette/CommandPalette.tsx",
+    "src/components/sidebar/Sidebar.tsx"
+  ],
   "testRunner": "vitest",
   "vitest": {
     "configFile": "vitest.config.ts"
   },
-  "mutate": [
-    "src/stores/workspaceStore.ts",
-    "src/lib/tauri-bridge.ts"
-  ],
   "reporters": ["clear-text", "html"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/html"
+  },
   "coverageAnalysis": "perTest",
+  "thresholds": {
+    "high": 92,
+    "low": 80,
+    "break": 75
+  },
+  "concurrency": 4,
   "timeoutMS": 30000
 }

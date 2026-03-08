@@ -4,7 +4,7 @@ const invokeHandlers = new Map<string, (...args: unknown[]) => unknown>();
 
 export const invoke = vi.fn((cmd: string, args?: unknown) => {
   const handler = invokeHandlers.get(cmd);
-  if (handler) return handler(args);
+  if (handler) return Promise.resolve(handler(args));
   throw new Error(`No mock handler for command: ${cmd}`);
 });
 

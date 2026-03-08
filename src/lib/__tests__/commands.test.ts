@@ -130,5 +130,118 @@ describe('commands', () => {
         expect(cmd.category).toBe('navigation');
       }
     });
+
+    it('returns empty array for terminal category', () => {
+      const terminalCommands = getCommandsByCategory('terminal');
+      expect(terminalCommands).toHaveLength(0);
+    });
+
+    it('returns all pane commands with correct ids', () => {
+      const paneCommands = getCommandsByCategory('pane');
+      const ids = paneCommands.map((c) => c.id);
+      expect(ids).toContain('pane.split-horizontal');
+      expect(ids).toContain('pane.split-vertical');
+      expect(ids).toContain('pane.close');
+      expect(ids).toContain('pane.open-browser');
+    });
+  });
+
+  describe('specific commands', () => {
+    it('pane.split-vertical has Ctrl+Shift+V default binding', () => {
+      const cmd = getCommandById('pane.split-vertical');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'v',
+        mod: true,
+        shift: true,
+        alt: false,
+      });
+    });
+
+    it('pane.close has Ctrl+W default binding', () => {
+      const cmd = getCommandById('pane.close');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'w',
+        mod: true,
+        shift: false,
+        alt: false,
+      });
+    });
+
+    it('pane.open-browser has Ctrl+Shift+B default binding', () => {
+      const cmd = getCommandById('pane.open-browser');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'b',
+        mod: true,
+        shift: true,
+        alt: false,
+      });
+    });
+
+    it('workspace.create has Ctrl+N default binding', () => {
+      const cmd = getCommandById('workspace.create');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'n',
+        mod: true,
+        shift: false,
+        alt: false,
+      });
+    });
+
+    it('app.toggle-notifications has Ctrl+I default binding', () => {
+      const cmd = getCommandById('app.toggle-notifications');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'i',
+        mod: true,
+        shift: false,
+        alt: false,
+      });
+    });
+
+    it('app.open-project has Ctrl+Shift+O default binding', () => {
+      const cmd = getCommandById('app.open-project');
+      expect(cmd).toBeDefined();
+      expect(cmd!.defaultBinding).toEqual({
+        key: 'o',
+        mod: true,
+        shift: true,
+        alt: false,
+      });
+    });
+
+    it('navigation commands have correct default bindings', () => {
+      const directions = [
+        { id: 'navigation.focus-up', key: 'ArrowUp' },
+        { id: 'navigation.focus-down', key: 'ArrowDown' },
+        { id: 'navigation.focus-left', key: 'ArrowLeft' },
+        { id: 'navigation.focus-right', key: 'ArrowRight' },
+      ];
+      for (const { id, key } of directions) {
+        const cmd = getCommandById(id);
+        expect(cmd).toBeDefined();
+        expect(cmd!.defaultBinding).toEqual({
+          key,
+          mod: true,
+          shift: false,
+          alt: false,
+        });
+      }
+    });
+
+    it('all commands have non-empty description', () => {
+      for (const cmd of getCommands()) {
+        expect(cmd.description.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('all commands have non-empty label', () => {
+      for (const cmd of getCommands()) {
+        expect(cmd.label.length).toBeGreaterThan(0);
+      }
+    });
   });
 });

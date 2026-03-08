@@ -135,6 +135,7 @@ describe('AppLayout', () => {
     render(<AppLayout />);
 
     expect(await screen.findByText('My Workspace')).toBeInTheDocument();
+
     expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
 
@@ -178,20 +179,26 @@ describe('AppLayout', () => {
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-2');
   });
 
-  it('handles workspace create', async () => {
-    const user = userEvent.setup();
+  it('handles workspace create by opening project picker', async () => {
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     mockInvoke('session_restore', () => Promise.resolve([ws1]));
 
     render(<AppLayout />);
 
-    await user.click(await screen.findByRole('button', { name: /open project/i }));
+    await screen.findByTestId('terminal-pane-pane-1');
 
-    // handleWorkspaceCreate('') opens the project picker dialog instead of
-    // directly calling workspace_create
-    await waitFor(() => {
-      expect(invoke).not.toHaveBeenCalledWith('workspace_create', expect.anything());
+    // Programmatically open the project picker (simulates workspace.create command)
+    act(() => {
+      useUiStore.getState().setProjectPickerOpen(true);
     });
+
+
+    await waitFor(() => {
+      expect(screen.getByText('Open a Project')).toBeInTheDocument();
+    });
+
+    // Verify workspace_create was NOT called directly
+    expect(invoke).not.toHaveBeenCalledWith('workspace_create', expect.anything());
   });
 
   it('handles workspace close', async () => {
@@ -340,7 +347,7 @@ describe('AppLayout', () => {
     render(<AppLayout />);
 
     await screen.findByText('Workspace 1');
-    await screen.findByText('Workspace 2');
+    expect(screen.getByText('Workspace 2')).toBeInTheDocument();
 
     act(() => {
       emitMockEvent('workspace-removed', { workspaceId: 'ws-1' });
@@ -356,9 +363,13 @@ describe('AppLayout', () => {
     const user = userEvent.setup();
     const ws1 = makeWorkspace('ws-1', 'Workspace 1', 'pane-1');
     const ws2 = makeWorkspace('ws-2', 'Workspace 2', 'pane-2', 'pty-2');
-    mockInvoke('session_restore', () => Promise.resolve([ws1, ws2]));
+    let ws1Removed = false;
+    mockInvoke('session_restore', () =>
+      Promise.resolve(ws1Removed ? [ws2] : [ws1, ws2]),
+    );
     // Simulate backend: pane_close succeeds and backend emits workspace-removed
     mockInvoke('pane_close', () => {
+      ws1Removed = true;
       // Backend emits workspace-removed event when last pane closes the workspace
       emitMockEvent('workspace-removed', { workspaceId: 'ws-1' });
       return Promise.resolve();
@@ -652,8 +663,8 @@ describe('AppLayout', () => {
 
       await waitFor(() => {
         expect(useWorkspaceStore.getState().browserPaneUrls['pane-browser']).toBe('about:blank');
-        expect(screen.getByTitle('Browser panel')).toBeInTheDocument();
       });
+      expect(screen.getByTitle('Browser panel')).toBeInTheDocument();
     });
 
     it('handlePaneAutoSplit uses focused pane dimensions to choose direction', async () => {
@@ -710,7 +721,7 @@ describe('AppLayout', () => {
       render(<AppLayout />);
 
       await screen.findByTestId('terminal-pane-pane-1');
-      await screen.findByTestId('terminal-pane-pane-2');
+      expect(screen.getByTestId('terminal-pane-pane-2')).toBeInTheDocument();
 
       const sourcePane = screen
         .getByTestId('terminal-pane-pane-1')

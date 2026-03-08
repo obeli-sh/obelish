@@ -95,4 +95,57 @@ describe('projectStore', () => {
     useProjectStore.getState()._removeProject('nonexistent');
     expect(useProjectStore.getState().orderedProjectIds).toEqual(['proj-1']);
   });
+
+  it('_removeProject keeps activeProjectId when non-active project removed', () => {
+    useProjectStore.getState()._addProject(makeProject({ id: 'p1' }));
+    useProjectStore.getState()._addProject(makeProject({ id: 'p2' }));
+    useProjectStore.getState()._setActiveProject('p1');
+    useProjectStore.getState()._removeProject('p2');
+    expect(useProjectStore.getState().activeProjectId).toBe('p1');
+  });
+
+  it('getActiveProject returns null when activeProjectId points to nonexistent project', () => {
+    useProjectStore.setState({ activeProjectId: 'nonexistent' });
+    expect(useProjectStore.getState().getActiveProject()).toBeNull();
+  });
+
+  it('_addProject does not duplicate orderedProjectIds for existing project', () => {
+    const project = makeProject({ id: 'p1' });
+    useProjectStore.getState()._addProject(project);
+    useProjectStore.getState()._addProject({ ...project, name: 'Updated' });
+    expect(useProjectStore.getState().orderedProjectIds).toEqual(['p1']);
+  });
+
+  it('_addProject updates project data for existing project', () => {
+    const project = makeProject({ id: 'p1', name: 'Original' });
+    useProjectStore.getState()._addProject(project);
+    useProjectStore.getState()._addProject({ ...project, name: 'Updated' });
+    expect(useProjectStore.getState().projects['p1'].name).toBe('Updated');
+  });
+
+  it('_syncProjects replaces orderedProjectIds completely', () => {
+    useProjectStore.getState()._addProject(makeProject({ id: 'old1' }));
+    useProjectStore.getState()._addProject(makeProject({ id: 'old2' }));
+    useProjectStore.getState()._syncProjects([
+      makeProject({ id: 'new1' }),
+    ]);
+    expect(useProjectStore.getState().orderedProjectIds).toEqual(['new1']);
+    expect(useProjectStore.getState().projects['old1']).toBeUndefined();
+    expect(useProjectStore.getState().projects['old2']).toBeUndefined();
+  });
+
+  it('_setActiveProject can set to null', () => {
+    useProjectStore.getState()._addProject(makeProject());
+    useProjectStore.getState()._setActiveProject('proj-1');
+    useProjectStore.getState()._setActiveProject(null);
+    expect(useProjectStore.getState().activeProjectId).toBeNull();
+  });
+
+  it('_removeProject removes from both projects and orderedProjectIds', () => {
+    useProjectStore.getState()._addProject(makeProject({ id: 'p1' }));
+    useProjectStore.getState()._addProject(makeProject({ id: 'p2' }));
+    useProjectStore.getState()._removeProject('p1');
+    expect(useProjectStore.getState().projects['p1']).toBeUndefined();
+    expect(useProjectStore.getState().orderedProjectIds).toEqual(['p2']);
+  });
 });

@@ -25,9 +25,33 @@ coverage:
     cargo test --workspace
     bun run test:coverage
 
+# Run Rust mutation testing on high-value modules (requires cargo-mutants)
+mutants:
+    cargo mutants -p obelisk -- --test-threads=1 -F src-tauri/src/workspace/ -F src-tauri/src/commands.rs
+
+# Run TypeScript mutation testing on high-value modules
+mutate-ts:
+    bun run mutate
+
+# Run visual regression snapshot tests
+test-visual:
+    bun run test:e2e -- --grep "visual regression"
+
+# Update visual regression baseline screenshots
+test-visual-update:
+    bun run test:e2e -- --grep "visual regression" --update-snapshots
+
 # Run benchmarks
 bench:
     cargo bench -p obelisk
+
+# Run fuzz tests for N seconds (default 60)
+fuzz target="fuzz_osc_parser" seconds="60":
+    cd src-tauri && cargo +nightly fuzz run {{target}} -- -max_total_time={{seconds}}
+
+# List available fuzz targets
+fuzz-list:
+    cd src-tauri && cargo +nightly fuzz list
 
 # Build Tauri app for production
 release:

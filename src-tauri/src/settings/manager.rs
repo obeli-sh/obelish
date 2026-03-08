@@ -321,6 +321,144 @@ mod tests {
         assert_eq!(original, deserialized);
     }
 
+    // --- Fault injection tests ---
+
+    #[test]
+    fn update_theme_with_integer_returns_error() {
+        let (_dir, manager) = setup();
+        // theme expects a string, passing an integer should fail
+        let result = manager.update("theme", serde_json::json!(42));
+        assert!(result.is_err());
+        // Verify the settings were NOT changed (still default)
+        assert_eq!(manager.get().theme, Settings::default().theme);
+    }
+
+    #[test]
+    fn update_theme_with_null_returns_error() {
+        let (_dir, manager) = setup();
+        let result = manager.update("theme", serde_json::json!(null));
+        assert!(result.is_err());
+        assert_eq!(manager.get().theme, Settings::default().theme);
+    }
+
+    #[test]
+    fn update_unknown_dotted_key_returns_error() {
+        let (_dir, manager) = setup();
+        let result = manager.update("nonexistent.key", serde_json::json!("x"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_unknown_simple_key_returns_error() {
+        let (_dir, manager) = setup();
+        let result = manager.update("doesNotExist", serde_json::json!("value"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn reset_restores_all_changed_settings_to_defaults() {
+        let (_dir, manager) = setup();
+        let defaults = Settings::default();
+
+        // Change multiple settings
+        manager.update("theme", serde_json::json!("light")).unwrap();
+        manager
+            .update("terminalFontFamily", serde_json::json!("Fira Code"))
+            .unwrap();
+        manager
+            .update("terminalFontSize", serde_json::json!(20))
+            .unwrap();
+        manager
+            .update("scrollbackLines", serde_json::json!(5000))
+            .unwrap();
+        manager
+            .update("defaultShell", serde_json::json!("/bin/zsh"))
+            .unwrap();
+        let kb = serde_json::json!({"key": "x", "mod": true, "shift": true, "alt": true});
+        manager.update("keybindings.pane.close", kb).unwrap();
+
+        // Verify everything changed
+        let changed = manager.get();
+        assert_ne!(changed.theme, defaults.theme);
+        assert_ne!(changed.terminal_font_family, defaults.terminal_font_family);
+        assert_ne!(changed.terminal_font_size, defaults.terminal_font_size);
+        assert_ne!(changed.scrollback_lines, defaults.scrollback_lines);
+
+        // Reset
+        manager.reset().unwrap();
+
+        // Verify ALL settings restored to defaults
+        let restored = manager.get();
+        assert_eq!(restored, defaults);
+    }
+
+    #[test]
+    fn persistence_roundtrip_multiple_settings() {
+        let dir = TempDir::new().unwrap();
+        let backend = Arc::new(FsPersistence::new(dir.path()).unwrap());
+
+        // First manager: change many settings
+        {
+            let manager = SettingsManager::new(backend.clone());
+            manager.update("theme", serde_json::json!("light")).unwrap();
+            manager
+                .update("terminalFontFamily", serde_json::json!("Monospace"))
+                .unwrap();
+            manager
+                .update("terminalFontSize", serde_json::json!(18))
+                .unwrap();
+            manager
+                .update("scrollbackLines", serde_json::json!(8000))
+                .unwrap();
+        }
+
+        // Second manager: verify all persisted settings loaded correctly
+        {
+            let manager = SettingsManager::new(backend);
+            let settings = manager.get();
+            assert_eq!(settings.theme, "light");
+            assert_eq!(settings.terminal_font_family, "Monospace");
+            assert_eq!(settings.terminal_font_size, 18);
+            assert_eq!(settings.scrollback_lines, 8000);
+        }
+    }
+
+    /// A mock backend that fails on save (simulates disk errors).
+    struct FailingBackend;
+
+    impl PersistenceBackend for FailingBackend {
+        fn save(&self, _key: &str, _data: &[u8]) -> Result<(), crate::error::PersistenceError> {
+            Err(crate::error::PersistenceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "disk error",
+            )))
+        }
+        fn load(&self, _key: &str) -> Result<Option<Vec<u8>>, crate::error::PersistenceError> {
+            Ok(None)
+        }
+        fn delete(&self, _key: &str) -> Result<(), crate::error::PersistenceError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn update_with_failing_backend_returns_error() {
+        let backend = Arc::new(FailingBackend);
+        let manager = SettingsManager::new(backend);
+
+        let result = manager.update("theme", serde_json::json!("dark"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn reset_with_failing_backend_returns_error() {
+        let backend = Arc::new(FailingBackend);
+        let manager = SettingsManager::new(backend);
+
+        let result = manager.reset();
+        assert!(result.is_err());
+    }
+
     #[test]
     fn keybinding_serialization_roundtrip_via_json() {
         let kb = KeyBinding {

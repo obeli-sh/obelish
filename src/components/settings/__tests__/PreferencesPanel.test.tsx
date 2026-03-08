@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { PreferencesPanel } from '../PreferencesPanel';
@@ -74,9 +74,7 @@ describe('PreferencesPanel', () => {
     expect(useSettingsStore.getState().preferredWorkspaceLayout).toBe('stacked');
 
     // ShellSelector shows a card-style shell picker populated from the backend
-    await waitFor(() => {
-      expect(screen.getByRole('radiogroup', { name: /default shell/i })).toBeInTheDocument();
-    });
+    await screen.findByRole('radiogroup', { name: /default shell/i });
     await user.click(screen.getByText('Zsh'));
     expect(useSettingsStore.getState().defaultShell).toBe('/usr/bin/zsh');
   });

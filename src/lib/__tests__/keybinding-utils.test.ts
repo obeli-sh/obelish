@@ -202,5 +202,107 @@ describe('keybinding-utils', () => {
     it('handles empty bindings', () => {
       expect(detectConflicts({})).toEqual([]);
     });
+
+    it('does not report single-command groups as conflicts', () => {
+      const bindings: Record<string, KeyBinding> = {
+        'cmd.a': kb('a'),
+        'cmd.b': kb('b'),
+      };
+      const conflicts = detectConflicts(bindings);
+      expect(conflicts).toHaveLength(0);
+    });
+
+    it('includes the binding in the conflict object', () => {
+      const bindings: Record<string, KeyBinding> = {
+        'cmd.a': kb('n', true, true),
+        'cmd.b': kb('n', true, true),
+      };
+      const conflicts = detectConflicts(bindings);
+      expect(conflicts[0].binding).toEqual(kb('n', true, true));
+    });
+
+    it('treats case-insensitive keys as the same binding', () => {
+      const bindings: Record<string, KeyBinding> = {
+        'cmd.a': { key: 'N', mod: true, shift: false, alt: false },
+        'cmd.b': { key: 'n', mod: true, shift: false, alt: false },
+      };
+      const conflicts = detectConflicts(bindings);
+      expect(conflicts).toHaveLength(1);
+    });
+  });
+
+  describe('bindingsEqual edge cases', () => {
+    it('is case-insensitive for key comparison', () => {
+      expect(bindingsEqual(
+        { key: 'N', mod: true, shift: false, alt: false },
+        { key: 'n', mod: true, shift: false, alt: false },
+      )).toBe(true);
+    });
+
+    it('returns false when only alt differs (all others match)', () => {
+      expect(bindingsEqual(
+        { key: 'x', mod: false, shift: false, alt: true },
+        { key: 'x', mod: false, shift: false, alt: false },
+      )).toBe(false);
+    });
+
+    it('returns false when only shift differs (all others match)', () => {
+      expect(bindingsEqual(
+        { key: 'x', mod: false, shift: true, alt: false },
+        { key: 'x', mod: false, shift: false, alt: false },
+      )).toBe(false);
+    });
+
+    it('returns false when only mod differs (all others match)', () => {
+      expect(bindingsEqual(
+        { key: 'x', mod: true, shift: false, alt: false },
+        { key: 'x', mod: false, shift: false, alt: false },
+      )).toBe(false);
+    });
+
+    it('returns false when only key differs (all modifiers match)', () => {
+      expect(bindingsEqual(
+        { key: 'a', mod: true, shift: true, alt: true },
+        { key: 'b', mod: true, shift: true, alt: true },
+      )).toBe(false);
+    });
+  });
+
+  describe('bindingToString edge cases', () => {
+    it('formats key-only binding with no modifiers', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'Win32',
+        configurable: true,
+      });
+      const binding: KeyBinding = { key: 'a', mod: false, shift: false, alt: false };
+      expect(bindingToString(binding)).toBe('A');
+    });
+
+    it('formats multi-character key without uppercasing', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'Win32',
+        configurable: true,
+      });
+      const binding: KeyBinding = { key: 'Enter', mod: false, shift: false, alt: false };
+      expect(bindingToString(binding)).toBe('Enter');
+    });
+
+    it('formats Shift+Alt without mod', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'Win32',
+        configurable: true,
+      });
+      const binding: KeyBinding = { key: 'x', mod: false, shift: true, alt: true };
+      expect(bindingToString(binding)).toBe('Shift+Alt+X');
+    });
+
+    it('formats Alt-only binding', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'Win32',
+        configurable: true,
+      });
+      const binding: KeyBinding = { key: 'z', mod: false, shift: false, alt: true };
+      expect(bindingToString(binding)).toBe('Alt+Z');
+    });
   });
 });

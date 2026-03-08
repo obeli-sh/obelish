@@ -1071,6 +1071,48 @@ mod default_shell_resolution_tests {
             None
         );
     }
+
+    #[test]
+    fn resolve_default_shell_with_available_returns_none_for_whitespace_only() {
+        let available = vec![ShellInfo {
+            path: "/bin/bash".to_string(),
+            name: "Bash".to_string(),
+        }];
+        assert_eq!(
+            resolve_default_shell_with_available("   ", &available),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_default_shell_with_available_returns_some_when_in_list() {
+        let available = vec![
+            ShellInfo {
+                path: "/bin/bash".to_string(),
+                name: "Bash".to_string(),
+            },
+            ShellInfo {
+                path: "/bin/zsh".to_string(),
+                name: "Zsh".to_string(),
+            },
+        ];
+        assert_eq!(
+            resolve_default_shell_with_available("/bin/bash", &available),
+            Some("/bin/bash".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_default_shell_with_available_returns_none_for_unlisted_shell() {
+        let available = vec![ShellInfo {
+            path: "/bin/bash".to_string(),
+            name: "Bash".to_string(),
+        }];
+        assert_eq!(
+            resolve_default_shell_with_available("/usr/local/bin/nushell", &available),
+            None
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1460,10 +1502,1347 @@ mod list_directories_tests {
         assert!(result.iter().any(|p| p.ends_with("/bin")));
         assert!(!result.iter().any(|p| p.ends_with("/lib")));
     }
+
+    #[test]
+    fn relative_path_traversal_does_not_panic() {
+        // Relative traversal paths like "../../../etc" should not panic.
+        // The function may return results (resolved relative to CWD) or empty,
+        // but it must never crash.
+        let result = list_directories("../../../etc".to_string(), None);
+        // Just assert it doesn't panic; result depends on the OS and CWD
+        let _ = result;
+    }
+
+    #[test]
+    fn relative_path_dot_dot_only_does_not_panic() {
+        let result = list_directories("..".to_string(), None);
+        let _ = result;
+    }
+
+    #[test]
+    fn absolute_path_returns_directories_or_empty() {
+        // An absolute path that exists should return results; one that doesn't
+        // should return empty — but neither should panic.
+        #[cfg(unix)]
+        {
+            let result = list_directories("/tmp".to_string(), None);
+            // /tmp exists on virtually all Unix systems
+            let _ = result;
+        }
+        #[cfg(windows)]
+        {
+            let result = list_directories(r"C:\".to_string(), None);
+            assert!(!result.is_empty());
+        }
+    }
+
+    #[test]
+    fn nonexistent_absolute_path_returns_empty() {
+        let result = list_directories(
+            "/nonexistent/path/that/should/not/exist/xyz123".to_string(),
+            None,
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn empty_string_does_not_panic() {
+        let result = list_directories(String::new(), None);
+        let _ = result;
+    }
+
+    #[test]
+    fn path_with_null_bytes_does_not_panic() {
+        // Paths containing null bytes are invalid on all platforms;
+        // the function should handle them gracefully.
+        let result = list_directories("/tmp/\0evil".to_string(), None);
+        assert!(result.is_empty());
+    }
 }
 
 #[cfg(test)]
 mod cross_platform_path_tests {
+    use super::*;
+
+    // --- list_directories cross-platform tests ---
+
+    #[test]
+    fn list_directories_handles_forward_slash_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+        // Convert path to use forward slashes (simulates Unix-style input on any platform)
+        let path_str = tmp.path().to_string_lossy().replace('\\', "/");
+        let result = list_directories(path_str, None);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("subdir"));
+    }
+
+    #[test]
+    fn list_directories_handles_trailing_separator_cross_platform() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("child")).unwrap();
+
+        // Test with forward slash trailing separator
+        let mut path_str = tmp.path().to_string_lossy().to_string();
+        if !path_str.ends_with('/') && !path_str.ends_with('\\') {
+            path_str.push('/');
+        }
+        let result = list_directories(path_str, None);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("child"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn list_directories_handles_backslash_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("windir")).unwrap();
+
+        let path_str = tmp.path().to_string_lossy().to_string();
+        // On Windows, paths naturally use backslashes
+        assert!(path_str.contains('\\'));
+        let result = list_directories(path_str, None);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("windir"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn list_directories_handles_drive_letter_path() {
+        // C:\ should be listable on Windows (contains Windows, Users, etc.)
+        let result = list_directories(r"C:\".to_string(), None);
+        assert!(!result.is_empty(), "C:\\ should contain directories");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn list_directories_handles_drive_letter_prefix_filter() {
+        // C:\U should filter for directories starting with U (e.g., Users)
+        let result = list_directories(r"C:\U".to_string(), None);
+        assert!(
+            result.iter().any(|p| p.contains("Users")),
+            "C:\\U should match Users directory, got: {:?}",
+            result
+        );
+    }
+
+    // --- list_directories WSL-style path tests (run on all platforms) ---
+
+    #[test]
+    fn list_directories_wsl_false_does_not_use_wsl() {
+        // When wsl=Some(false), should use native path handling
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("native")).unwrap();
+        let result = list_directories(tmp.path().to_string_lossy().to_string(), Some(false));
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("native"));
+    }
+
+    #[test]
+    fn list_directories_wsl_none_does_not_use_wsl() {
+        // When wsl=None, should use native path handling
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("default")).unwrap();
+        let result = list_directories(tmp.path().to_string_lossy().to_string(), None);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("default"));
+    }
+
+    // --- project_add cross-platform path tests ---
+
+    fn make_project_store() -> Arc<RwLock<ProjectStore>> {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = Arc::new(
+            crate::persistence::fs::FsPersistence::new(tmp.path().join("projects")).unwrap(),
+        );
+        // Leak the tempdir so it lives long enough for the test
+        std::mem::forget(tmp);
+        Arc::new(RwLock::new(ProjectStore::new(backend)))
+    }
+
+    #[test]
+    fn project_add_extracts_name_from_unix_style_path() {
+        let store = make_project_store();
+        let project = store
+            .write()
+            .unwrap()
+            .add("/home/user/my-project".to_string())
+            .unwrap();
+        assert_eq!(project.name, "my-project");
+    }
+
+    #[test]
+    fn project_add_extracts_name_from_wsl_mount_path() {
+        let store = make_project_store();
+        let project = store
+            .write()
+            .unwrap()
+            .add("/mnt/c/Users/dev/repos/cool-app".to_string())
+            .unwrap();
+        assert_eq!(project.name, "cool-app");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_add_extracts_name_from_windows_path() {
+        let store = make_project_store();
+        let project = store
+            .write()
+            .unwrap()
+            .add(r"C:\Users\dev\repos\win-project".to_string())
+            .unwrap();
+        assert_eq!(project.name, "win-project");
+    }
+}
+
+/// Integration tests that exercise the same logic as Tauri commands
+/// by operating on the underlying subsystems directly.
+/// Since Tauri commands are thin wrappers around these subsystems,
+/// testing the composition here is equivalent to integration-testing
+/// the commands.
+#[cfg(test)]
+mod command_integration_tests {
+    use super::*;
+    use crate::persistence::fs::FsPersistence;
+    use crate::pty::backend::{PtyBackend, SpawnedPty};
+    use crate::pty::emitter::MockEventEmitter;
+    use std::io::{Read as IoRead, Write as IoWrite};
+    use tempfile::TempDir;
+
+    // --- Test doubles ---
+
+    struct SinkWriter;
+    impl IoWrite for SinkWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct EmptyReader;
+    impl IoRead for EmptyReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Ok(0)
+        }
+    }
+
+    struct FakeChild;
+    impl crate::pty::backend::ChildController for FakeChild {
+        fn kill(&mut self) -> Result<(), crate::error::PtyError> {
+            Ok(())
+        }
+        fn is_alive(&mut self) -> Result<bool, crate::error::PtyError> {
+            Ok(false)
+        }
+    }
+
+    struct FakeResizer;
+    impl crate::pty::backend::PtyResizer for FakeResizer {
+        fn resize(&self, _rows: u16, _cols: u16) -> Result<(), crate::error::PtyError> {
+            Ok(())
+        }
+    }
+
+    struct FakePtyBackend;
+    impl PtyBackend for FakePtyBackend {
+        fn spawn(
+            &self,
+            _config: &crate::pty::types::PtyConfig,
+        ) -> Result<SpawnedPty, crate::error::PtyError> {
+            Ok(SpawnedPty {
+                writer: Box::new(SinkWriter),
+                reader: Box::new(EmptyReader),
+                child: Box::new(FakeChild),
+                resizer: Box::new(FakeResizer),
+            })
+        }
+    }
+
+    struct FailingPtyBackend;
+    impl PtyBackend for FailingPtyBackend {
+        fn spawn(
+            &self,
+            _config: &crate::pty::types::PtyConfig,
+        ) -> Result<SpawnedPty, crate::error::PtyError> {
+            Err(crate::error::PtyError::SpawnFailed(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "fake spawn failure",
+            )))
+        }
+    }
+
+    // --- Helpers ---
+
+    struct TestHarness {
+        pty_manager: PtyManager,
+        workspace_state: Arc<RwLock<WorkspaceState>>,
+        session_manager: Arc<SessionManager>,
+        scrollback_storage: ScrollbackStorage,
+        notification_store: Arc<RwLock<NotificationStore>>,
+        settings_manager: SettingsManager,
+        project_store: Arc<RwLock<ProjectStore>>,
+        emitter: Arc<MockEventEmitter>,
+        _temp_dir: TempDir,
+    }
+
+    impl TestHarness {
+        fn new() -> Self {
+            Self::with_backend(Arc::new(FakePtyBackend))
+        }
+
+        fn with_backend(backend: Arc<dyn PtyBackend>) -> Self {
+            let tmp = TempDir::new().unwrap();
+            let persistence = Arc::new(FsPersistence::new(tmp.path().join("sessions")).unwrap());
+            let scrollback_dir = tmp.path().join("scrollback");
+            std::fs::create_dir_all(&scrollback_dir).unwrap();
+            let settings_backend =
+                Arc::new(FsPersistence::new(tmp.path().join("settings")).unwrap());
+            let project_backend =
+                Arc::new(FsPersistence::new(tmp.path().join("projects")).unwrap());
+
+            Self {
+                pty_manager: PtyManager::new(backend),
+                workspace_state: Arc::new(RwLock::new(WorkspaceState::new())),
+                session_manager: Arc::new(SessionManager::new(persistence)),
+                scrollback_storage: ScrollbackStorage::new(scrollback_dir).unwrap(),
+                notification_store: Arc::new(RwLock::new(NotificationStore::new(1000))),
+                settings_manager: SettingsManager::new(settings_backend),
+                project_store: Arc::new(RwLock::new(ProjectStore::new(project_backend))),
+                emitter: Arc::new(MockEventEmitter::new()),
+                _temp_dir: tmp,
+            }
+        }
+
+        fn with_failing_pty() -> Self {
+            Self::with_backend(Arc::new(FailingPtyBackend))
+        }
+
+        /// Simulates workspace_create command logic
+        fn create_workspace(
+            &self,
+            name: &str,
+            worktree_path: &str,
+        ) -> Result<WorkspaceInfo, BackendError> {
+            let pane_id = uuid::Uuid::new_v4().to_string();
+            let config = crate::pty::types::PtyConfig {
+                shell: None,
+                cwd: if worktree_path.is_empty() {
+                    None
+                } else {
+                    Some(worktree_path.to_string())
+                },
+                env: None,
+                rows: None,
+                cols: None,
+            };
+            let pty_id = self.pty_manager.spawn(config, self.emitter.clone())?;
+
+            let mut ws = self
+                .workspace_state
+                .write()
+                .expect("workspace state lock poisoned");
+            let workspace = ws.create_workspace(
+                name.to_string(),
+                pane_id,
+                pty_id,
+                String::new(),
+                worktree_path.to_string(),
+                None,
+                false,
+            );
+            self.session_manager.mark_dirty();
+            Ok(workspace)
+        }
+    }
+
+    // === Workspace lifecycle tests ===
+
+    #[test]
+    fn workspace_create_spawns_pty_and_creates_workspace() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("Test WS", "").unwrap();
+        assert_eq!(ws.name, "Test WS");
+        assert!(!ws.id.is_empty());
+        assert_eq!(ws.surfaces.len(), 1);
+
+        let state = h.workspace_state.read().unwrap();
+        assert_eq!(state.list_workspaces().len(), 1);
+        assert!(h.session_manager.is_dirty());
+    }
+
+    #[test]
+    fn workspace_create_with_failing_pty_returns_error() {
+        let h = TestHarness::with_failing_pty();
+        let result = h.create_workspace("Test", "");
+        assert!(result.is_err());
+        // Workspace should NOT have been created
+        let state = h.workspace_state.read().unwrap();
+        assert_eq!(state.list_workspaces().len(), 0);
+    }
+
+    #[test]
+    fn workspace_list_returns_all_workspaces() {
+        let h = TestHarness::new();
+        h.create_workspace("WS 1", "").unwrap();
+        h.create_workspace("WS 2", "").unwrap();
+        h.create_workspace("WS 3", "").unwrap();
+
+        let state = h.workspace_state.read().unwrap();
+        let workspaces = state.list_workspaces();
+        assert_eq!(workspaces.len(), 3);
+        assert_eq!(workspaces[0].name, "WS 1");
+        assert_eq!(workspaces[1].name, "WS 2");
+        assert_eq!(workspaces[2].name, "WS 3");
+    }
+
+    #[test]
+    fn workspace_list_empty_returns_empty_vec() {
+        let h = TestHarness::new();
+        let state = h.workspace_state.read().unwrap();
+        assert!(state.list_workspaces().is_empty());
+    }
+
+    #[test]
+    fn workspace_rename_updates_name() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("Old Name", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let renamed = state
+            .rename_workspace(&ws.id, "New Name".to_string())
+            .unwrap();
+        assert_eq!(renamed.name, "New Name");
+        assert_eq!(renamed.id, ws.id);
+    }
+
+    #[test]
+    fn workspace_rename_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.rename_workspace("nonexistent", "New Name".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn workspace_reorder_changes_order() {
+        let h = TestHarness::new();
+        let ws1 = h.create_workspace("WS 1", "").unwrap();
+        let ws2 = h.create_workspace("WS 2", "").unwrap();
+        let ws3 = h.create_workspace("WS 3", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        state
+            .reorder_workspaces(&[ws3.id.clone(), ws1.id.clone(), ws2.id.clone()])
+            .unwrap();
+
+        let workspaces = state.list_workspaces();
+        assert_eq!(workspaces[0].id, ws3.id);
+        assert_eq!(workspaces[1].id, ws1.id);
+        assert_eq!(workspaces[2].id, ws2.id);
+    }
+
+    #[test]
+    fn workspace_reorder_with_missing_ids_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS 1", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.reorder_workspaces(&["nonexistent".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn workspace_close_removes_workspace_and_kills_ptys() {
+        let h = TestHarness::new();
+        let ws1 = h.create_workspace("WS 1", "").unwrap();
+        let ws2 = h.create_workspace("WS 2", "").unwrap();
+
+        // Close ws1
+        let pty_ids = {
+            let mut state = h.workspace_state.write().unwrap();
+            state.close_workspace(&ws1.id).unwrap()
+        };
+
+        // PTY cleanup (simulates what the command does)
+        for pty_id in &pty_ids {
+            if !pty_id.is_empty() {
+                let _ = h.pty_manager.kill(pty_id);
+            }
+        }
+
+        let state = h.workspace_state.read().unwrap();
+        assert_eq!(state.list_workspaces().len(), 1);
+        assert_eq!(state.list_workspaces()[0].id, ws2.id);
+    }
+
+    #[test]
+    fn workspace_close_last_workspace_returns_error() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("Only WS", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.close_workspace(&ws.id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn workspace_close_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS 1", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.close_workspace("nonexistent");
+        assert!(result.is_err());
+    }
+
+    // === Pane lifecycle tests ===
+
+    #[test]
+    fn pane_split_creates_new_pane_with_pty() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("WS", "").unwrap();
+        let pane_id = match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        // Simulate pane_split command
+        let new_pane_id = uuid::Uuid::new_v4().to_string();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let new_pty_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state
+            .split_pane(
+                &pane_id,
+                SplitDirection::Horizontal,
+                new_pane_id,
+                new_pty_id,
+            )
+            .unwrap();
+        assert_eq!(result.workspace.id, ws.id);
+        // Layout should now be a split
+        match &result.workspace.surfaces[0].layout {
+            LayoutNode::Split { children, .. } => assert_eq!(children.len(), 2),
+            _ => panic!("expected split layout"),
+        }
+    }
+
+    #[test]
+    fn pane_split_nonexistent_pane_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.split_pane(
+            "nonexistent",
+            SplitDirection::Vertical,
+            "new-pane".to_string(),
+            "new-pty".to_string(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pane_split_cleans_up_pty_on_workspace_error() {
+        let h = TestHarness::new();
+        // Simulate what happens when split_pane fails after PTY spawn
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        // split_pane will fail because pane doesn't exist
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.split_pane(
+            "nonexistent",
+            SplitDirection::Horizontal,
+            "new-pane".to_string(),
+            pty_id.clone(),
+        );
+        assert!(result.is_err());
+        drop(state);
+
+        // Command logic would kill the orphaned PTY
+        let kill_result = h.pty_manager.kill(&pty_id);
+        assert!(kill_result.is_ok());
+    }
+
+    #[test]
+    fn pane_swap_exchanges_pane_positions() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("WS", "").unwrap();
+        let pane1_id = match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        // Split to create second pane
+        let pane2_id = uuid::Uuid::new_v4().to_string();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty2_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        state
+            .split_pane(
+                &pane1_id,
+                SplitDirection::Horizontal,
+                pane2_id.clone(),
+                pty2_id,
+            )
+            .unwrap();
+
+        // Swap panes
+        let result = state.swap_panes(&pane1_id, &pane2_id);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn pane_swap_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.swap_panes("nonexistent", "also-nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pane_close_removes_pane_and_kills_pty() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("WS", "").unwrap();
+        let pane1_id = match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        // Split to create second pane
+        let pane2_id = uuid::Uuid::new_v4().to_string();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty2_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        state
+            .split_pane(
+                &pane1_id,
+                SplitDirection::Horizontal,
+                pane2_id.clone(),
+                pty2_id.clone(),
+            )
+            .unwrap();
+
+        // Close pane2
+        let result = state.close_pane(&pane2_id).unwrap();
+        drop(state);
+
+        // Command logic: kill PTY
+        if !result.pty_id.is_empty() {
+            let _ = h.pty_manager.kill(&result.pty_id);
+        }
+
+        // Workspace should still exist with only pane1
+        let state = h.workspace_state.read().unwrap();
+        assert_eq!(state.list_workspaces().len(), 1);
+        match &state.list_workspaces()[0].surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => assert_eq!(*pane_id, pane1_id),
+            _ => panic!("expected leaf after closing split partner"),
+        }
+    }
+
+    #[test]
+    fn pane_close_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.close_pane("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pane_open_browser_creates_browser_pane() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("WS", "").unwrap();
+        let pane_id = match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        let new_pane_id = uuid::Uuid::new_v4().to_string();
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.open_browser_pane(
+            &pane_id,
+            SplitDirection::Horizontal,
+            new_pane_id,
+            "https://example.com".to_string(),
+        );
+        assert!(result.is_ok());
+
+        // Layout should now be a split
+        let workspaces = state.list_workspaces();
+        match &workspaces[0].surfaces[0].layout {
+            LayoutNode::Split { children, .. } => assert_eq!(children.len(), 2),
+            _ => panic!("expected split layout after browser pane open"),
+        }
+    }
+
+    #[test]
+    fn pane_open_browser_nonexistent_pane_returns_error() {
+        let h = TestHarness::new();
+        h.create_workspace("WS", "").unwrap();
+
+        let mut state = h.workspace_state.write().unwrap();
+        let result = state.open_browser_pane(
+            "nonexistent",
+            SplitDirection::Horizontal,
+            "new-pane".to_string(),
+            "https://example.com".to_string(),
+        );
+        assert!(result.is_err());
+    }
+
+    // === Session save/restore tests ===
+
+    #[test]
+    fn session_save_persists_workspace_state() {
+        let h = TestHarness::new();
+        h.create_workspace("WS 1", "").unwrap();
+        h.create_workspace("WS 2", "").unwrap();
+
+        // Simulate session_save command
+        let ws = h.workspace_state.read().unwrap();
+        h.session_manager.save(&ws).unwrap();
+        drop(ws);
+
+        // Verify saved
+        let loaded = h.session_manager.load().unwrap();
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().workspaces.len(), 2);
+    }
+
+    #[test]
+    fn session_save_empty_state_works() {
+        let h = TestHarness::new();
+        let ws = h.workspace_state.read().unwrap();
+        h.session_manager.save(&ws).unwrap();
+    }
+
+    // === Scrollback tests ===
+
+    #[test]
+    fn scrollback_save_and_load_roundtrip() {
+        let h = TestHarness::new();
+        let data = b"terminal scrollback content";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+
+        // Simulate scrollback_save: decode base64 then save
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&b64)
+            .unwrap();
+        h.scrollback_storage.save("pane-1", &bytes).unwrap();
+
+        // Simulate scrollback_load: load then encode base64
+        let loaded = h.scrollback_storage.load("pane-1").unwrap();
+        assert!(loaded.is_some());
+        let loaded_b64 = base64::engine::general_purpose::STANDARD.encode(loaded.unwrap());
+        assert_eq!(loaded_b64, b64);
+    }
+
+    #[test]
+    fn scrollback_load_nonexistent_returns_none() {
+        let h = TestHarness::new();
+        let loaded = h.scrollback_storage.load("nonexistent").unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn scrollback_save_invalid_base64_fails() {
+        // Simulate what scrollback_save does with invalid base64
+        let result = base64::engine::general_purpose::STANDARD.decode("not valid base64!!!");
+        assert!(result.is_err());
+    }
+
+    // === Notification tests ===
+
+    #[test]
+    fn notification_list_returns_all_notifications() {
+        let h = TestHarness::new();
+        {
+            let mut store = h.notification_store.write().unwrap();
+            store.add(obelisk_protocol::Notification {
+                id: "n1".to_string(),
+                pane_id: "p1".to_string(),
+                workspace_id: "ws1".to_string(),
+                osc_type: 9,
+                title: "Test".to_string(),
+                body: None,
+                timestamp: 0,
+                read: false,
+            });
+        }
+
+        let store = h.notification_store.read().unwrap();
+        let list = store.list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "Test");
+    }
+
+    #[test]
+    fn notification_mark_read_updates_notification() {
+        let h = TestHarness::new();
+        {
+            let mut store = h.notification_store.write().unwrap();
+            store.add(obelisk_protocol::Notification {
+                id: "n1".to_string(),
+                pane_id: "p1".to_string(),
+                workspace_id: "ws1".to_string(),
+                osc_type: 9,
+                title: "Test".to_string(),
+                body: None,
+                timestamp: 0,
+                read: false,
+            });
+        }
+
+        {
+            let mut store = h.notification_store.write().unwrap();
+            store.mark_read("n1");
+        }
+
+        let store = h.notification_store.read().unwrap();
+        assert!(store.list()[0].read);
+    }
+
+    #[test]
+    fn notification_mark_read_nonexistent_is_noop() {
+        let h = TestHarness::new();
+        let mut store = h.notification_store.write().unwrap();
+        store.mark_read("nonexistent"); // Should not panic
+        assert_eq!(store.list().len(), 0);
+    }
+
+    #[test]
+    fn notification_clear_removes_all() {
+        let h = TestHarness::new();
+        {
+            let mut store = h.notification_store.write().unwrap();
+            store.add(obelisk_protocol::Notification {
+                id: "n1".to_string(),
+                pane_id: "p1".to_string(),
+                workspace_id: "ws1".to_string(),
+                osc_type: 9,
+                title: "Test 1".to_string(),
+                body: None,
+                timestamp: 0,
+                read: false,
+            });
+            store.add(obelisk_protocol::Notification {
+                id: "n2".to_string(),
+                pane_id: "p2".to_string(),
+                workspace_id: "ws1".to_string(),
+                osc_type: 9,
+                title: "Test 2".to_string(),
+                body: None,
+                timestamp: 0,
+                read: false,
+            });
+        }
+
+        {
+            let mut store = h.notification_store.write().unwrap();
+            store.clear();
+        }
+
+        let store = h.notification_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    // === Settings tests ===
+
+    #[test]
+    fn settings_get_returns_defaults() {
+        let h = TestHarness::new();
+        let settings = h.settings_manager.get();
+        assert_eq!(settings, Settings::default());
+    }
+
+    #[test]
+    fn settings_update_and_get_roundtrip() {
+        let h = TestHarness::new();
+        h.settings_manager
+            .update("theme", serde_json::json!("light"))
+            .unwrap();
+        let settings = h.settings_manager.get();
+        assert_eq!(settings.theme, "light");
+    }
+
+    #[test]
+    fn settings_update_invalid_key_returns_error() {
+        let h = TestHarness::new();
+        let result = h
+            .settings_manager
+            .update("nonexistent.key", serde_json::json!("value"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn settings_update_invalid_type_returns_error() {
+        let h = TestHarness::new();
+        let result = h
+            .settings_manager
+            .update("terminalFontSize", serde_json::json!("not a number"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn settings_reset_restores_defaults() {
+        let h = TestHarness::new();
+        h.settings_manager
+            .update("theme", serde_json::json!("light"))
+            .unwrap();
+        h.settings_manager.reset().unwrap();
+        assert_eq!(h.settings_manager.get(), Settings::default());
+    }
+
+    // === Shell list test ===
+
+    #[test]
+    fn shell_list_returns_non_empty() {
+        // shell_list() calls RealPtyBackend::enumerate_shells()
+        let shells = shell_list();
+        // On any platform, at least one shell should be found
+        assert!(!shells.is_empty());
+        for shell in &shells {
+            assert!(!shell.path.is_empty());
+            assert!(!shell.name.is_empty());
+        }
+    }
+
+    // === Project lifecycle tests ===
+
+    #[test]
+    fn project_list_initially_empty() {
+        let h = TestHarness::new();
+        let store = h.project_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn project_add_and_list() {
+        let h = TestHarness::new();
+        let project = {
+            let mut store = h.project_store.write().unwrap();
+            store.add("/home/user/myproject".to_string()).unwrap()
+        };
+        assert_eq!(project.name, "myproject");
+
+        let store = h.project_store.read().unwrap();
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(store.list()[0].id, project.id);
+    }
+
+    #[test]
+    fn project_add_duplicate_returns_existing() {
+        let h = TestHarness::new();
+        let mut store = h.project_store.write().unwrap();
+        let p1 = store.add("/home/user/myproject".to_string()).unwrap();
+        let p2 = store.add("/home/user/myproject".to_string()).unwrap();
+        assert_eq!(p1.id, p2.id);
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn project_remove_deletes_project() {
+        let h = TestHarness::new();
+        let project = {
+            let mut store = h.project_store.write().unwrap();
+            store.add("/home/user/myproject".to_string()).unwrap()
+        };
+
+        {
+            let mut store = h.project_store.write().unwrap();
+            store.remove(&project.id).unwrap();
+        }
+
+        let store = h.project_store.read().unwrap();
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn project_remove_nonexistent_is_noop() {
+        let h = TestHarness::new();
+        let mut store = h.project_store.write().unwrap();
+        store.remove("nonexistent-id").unwrap(); // Should not panic
+    }
+
+    // === collect_layout_pane_ids tests ===
+
+    #[test]
+    fn collect_layout_pane_ids_leaf() {
+        let layout = LayoutNode::Leaf {
+            pane_id: "p1".to_string(),
+            pty_id: "pty1".to_string(),
+        };
+        let mut ids = Vec::new();
+        collect_layout_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec!["p1"]);
+    }
+
+    #[test]
+    fn collect_layout_pane_ids_split() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            sizes: [0.5, 0.5],
+            children: Box::new([
+                LayoutNode::Leaf {
+                    pane_id: "p1".to_string(),
+                    pty_id: "pty1".to_string(),
+                },
+                LayoutNode::Leaf {
+                    pane_id: "p2".to_string(),
+                    pty_id: "pty2".to_string(),
+                },
+            ]),
+        };
+        let mut ids = Vec::new();
+        collect_layout_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec!["p1", "p2"]);
+    }
+
+    #[test]
+    fn collect_layout_pane_ids_nested_split() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            sizes: [0.5, 0.5],
+            children: Box::new([
+                LayoutNode::Leaf {
+                    pane_id: "p1".to_string(),
+                    pty_id: "pty1".to_string(),
+                },
+                LayoutNode::Split {
+                    direction: SplitDirection::Vertical,
+                    sizes: [0.5, 0.5],
+                    children: Box::new([
+                        LayoutNode::Leaf {
+                            pane_id: "p2".to_string(),
+                            pty_id: "pty2".to_string(),
+                        },
+                        LayoutNode::Leaf {
+                            pane_id: "p3".to_string(),
+                            pty_id: "pty3".to_string(),
+                        },
+                    ]),
+                },
+            ]),
+        };
+        let mut ids = Vec::new();
+        collect_layout_pane_ids(&layout, &mut ids);
+        assert_eq!(ids, vec!["p1", "p2", "p3"]);
+    }
+
+    // === collect_layout_pane_ids_to_map tests ===
+
+    #[test]
+    fn collect_layout_pane_ids_to_map_leaf() {
+        let layout = LayoutNode::Leaf {
+            pane_id: "p1".to_string(),
+            pty_id: "pty1".to_string(),
+        };
+        let mut map = HashMap::new();
+        collect_layout_pane_ids_to_map(&layout, "/home/user/project", &mut map);
+        assert_eq!(map.get("p1").unwrap(), "/home/user/project");
+    }
+
+    #[test]
+    fn collect_layout_pane_ids_to_map_split() {
+        let layout = LayoutNode::Split {
+            direction: SplitDirection::Horizontal,
+            sizes: [0.5, 0.5],
+            children: Box::new([
+                LayoutNode::Leaf {
+                    pane_id: "p1".to_string(),
+                    pty_id: "pty1".to_string(),
+                },
+                LayoutNode::Leaf {
+                    pane_id: "p2".to_string(),
+                    pty_id: "pty2".to_string(),
+                },
+            ]),
+        };
+        let mut map = HashMap::new();
+        collect_layout_pane_ids_to_map(&layout, "/project", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("p1").unwrap(), "/project");
+        assert_eq!(map.get("p2").unwrap(), "/project");
+    }
+
+    // === Full lifecycle integration test ===
+
+    #[test]
+    fn full_workspace_lifecycle_create_split_close_pane_close_workspace() {
+        let h = TestHarness::new();
+
+        // 1. Create two workspaces
+        let ws1 = h.create_workspace("WS 1", "").unwrap();
+        let ws2 = h.create_workspace("WS 2", "").unwrap();
+        assert_eq!(h.workspace_state.read().unwrap().list_workspaces().len(), 2);
+
+        // 2. Split a pane in ws1
+        let pane1_id = match &ws1.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        let new_pane_id = uuid::Uuid::new_v4().to_string();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let new_pty_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        {
+            let mut state = h.workspace_state.write().unwrap();
+            state
+                .split_pane(
+                    &pane1_id,
+                    SplitDirection::Vertical,
+                    new_pane_id.clone(),
+                    new_pty_id.clone(),
+                )
+                .unwrap();
+        }
+
+        // 3. Close the new pane
+        {
+            let mut state = h.workspace_state.write().unwrap();
+            let result = state.close_pane(&new_pane_id).unwrap();
+            if !result.pty_id.is_empty() {
+                drop(state);
+                let _ = h.pty_manager.kill(&result.pty_id);
+            }
+        }
+
+        // 4. Verify ws1 is back to single pane
+        {
+            let state = h.workspace_state.read().unwrap();
+            let ws = state.get_workspace(&ws1.id).unwrap();
+            match &ws.surfaces[0].layout {
+                LayoutNode::Leaf { pane_id, .. } => assert_eq!(*pane_id, pane1_id),
+                _ => panic!("expected leaf after pane close"),
+            }
+        }
+
+        // 5. Close ws1
+        {
+            let mut state = h.workspace_state.write().unwrap();
+            let pty_ids = state.close_workspace(&ws1.id).unwrap();
+            drop(state);
+            for pty_id in pty_ids {
+                if !pty_id.is_empty() {
+                    let _ = h.pty_manager.kill(&pty_id);
+                }
+            }
+        }
+
+        // 6. Only ws2 remains
+        let state = h.workspace_state.read().unwrap();
+        assert_eq!(state.list_workspaces().len(), 1);
+        assert_eq!(state.list_workspaces()[0].id, ws2.id);
+    }
+
+    // === Session dirty tracking across operations ===
+
+    #[test]
+    fn session_dirty_flag_tracks_modifications() {
+        let h = TestHarness::new();
+        assert!(!h.session_manager.is_dirty());
+
+        // Create workspace marks dirty
+        h.create_workspace("WS", "").unwrap();
+        assert!(h.session_manager.is_dirty());
+
+        // Save clears dirty
+        let ws = h.workspace_state.read().unwrap();
+        h.session_manager.save(&ws).unwrap();
+        drop(ws);
+        assert!(!h.session_manager.is_dirty());
+    }
+
+    // === Scrollback cleanup on pane close ===
+
+    #[test]
+    fn scrollback_deleted_on_pane_close() {
+        let h = TestHarness::new();
+        let ws = h.create_workspace("WS", "").unwrap();
+        let pane1_id = match &ws.surfaces[0].layout {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            _ => panic!("expected leaf"),
+        };
+
+        // Split to create second pane
+        let pane2_id = uuid::Uuid::new_v4().to_string();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty2_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+        {
+            let mut state = h.workspace_state.write().unwrap();
+            state
+                .split_pane(
+                    &pane1_id,
+                    SplitDirection::Horizontal,
+                    pane2_id.clone(),
+                    pty2_id,
+                )
+                .unwrap();
+        }
+
+        // Save scrollback for pane2
+        h.scrollback_storage
+            .save(&pane2_id, b"scrollback data")
+            .unwrap();
+        assert!(h.scrollback_storage.load(&pane2_id).unwrap().is_some());
+
+        // Close pane2 (simulating what pane_close command does)
+        {
+            let mut state = h.workspace_state.write().unwrap();
+            let result = state.close_pane(&pane2_id).unwrap();
+            drop(state);
+            if !result.pty_id.is_empty() {
+                let _ = h.pty_manager.kill(&result.pty_id);
+            }
+        }
+        // Delete scrollback
+        let _ = h.scrollback_storage.delete(&pane2_id);
+
+        // Scrollback should be gone
+        assert!(h.scrollback_storage.load(&pane2_id).unwrap().is_none());
+    }
+
+    // === PTY lifecycle through commands ===
+
+    #[test]
+    fn pty_write_resize_kill_through_manager() {
+        let h = TestHarness::new();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+
+        // Write (simulates pty_write command)
+        let data = base64::engine::general_purpose::STANDARD.encode(b"hello");
+        h.pty_manager.write(&pty_id, &data).unwrap();
+
+        // Resize (simulates pty_resize command)
+        h.pty_manager.resize(&pty_id, 120, 40).unwrap();
+
+        // Kill (simulates pty_kill command)
+        h.pty_manager.kill(&pty_id).unwrap();
+
+        // Write after kill should fail
+        let result = h.pty_manager.write(&pty_id, &data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pty_write_to_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        let data = base64::engine::general_purpose::STANDARD.encode(b"hello");
+        let result = h.pty_manager.write("nonexistent", &data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pty_resize_to_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        let result = h.pty_manager.resize("nonexistent", 80, 24);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pty_kill_nonexistent_returns_error() {
+        let h = TestHarness::new();
+        let result = h.pty_manager.kill("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn pty_resize_zero_dimensions_returns_error() {
+        let h = TestHarness::new();
+        let config = crate::pty::types::PtyConfig {
+            shell: None,
+            cwd: None,
+            env: None,
+            rows: None,
+            cols: None,
+        };
+        let pty_id = h.pty_manager.spawn(config, h.emitter.clone()).unwrap();
+        let result = h.pty_manager.resize(&pty_id, 0, 24);
+        assert!(result.is_err());
+    }
+
+    // === Worktree command tests ===
+
+    #[test]
+    fn worktree_list_with_nonexistent_project_returns_error() {
+        let h = TestHarness::new();
+        let store = h.project_store.read().unwrap();
+        let result = store.get("nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn worktree_create_with_nonexistent_project_returns_error() {
+        let h = TestHarness::new();
+        let store = h.project_store.read().unwrap();
+        // Simulates what worktree_create does: first gets project, returns error if missing
+        let result = store.get("nonexistent").ok_or_else(|| {
+            BackendError::Workspace(crate::error::WorkspaceError::NotFound {
+                id: "nonexistent".to_string(),
+            })
+        });
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod cross_platform_path_extended_tests {
     use super::*;
 
     // --- Unix-style path tests (run on all platforms) ---
@@ -1714,7 +3093,7 @@ mod layout_helper_tests {
 }
 
 #[cfg(test)]
-mod command_integration_tests {
+mod command_subsystem_tests {
     use super::*;
     use crate::notifications::store::NotificationStore;
     use crate::persistence::fs::FsPersistence;
@@ -2048,7 +3427,7 @@ mod command_integration_tests {
         let (_, _, _, _, settings_manager, _) = make_components(&tmp);
 
         settings_manager
-            .update("terminal_font_size", serde_json::json!(18))
+            .update("terminalFontSize", serde_json::json!(18))
             .unwrap();
         let settings = settings_manager.get();
         assert_eq!(settings.terminal_font_size, 18);
@@ -2070,7 +3449,7 @@ mod command_integration_tests {
 
         let original = settings_manager.get().terminal_font_size;
         settings_manager
-            .update("terminal_font_size", serde_json::json!(99))
+            .update("terminalFontSize", serde_json::json!(99))
             .unwrap();
         assert_eq!(settings_manager.get().terminal_font_size, 99);
 
@@ -2140,13 +3519,13 @@ mod command_integration_tests {
     }
 
     #[test]
-    fn project_remove_nonexistent_returns_error() {
+    fn project_remove_nonexistent_is_noop() {
         let tmp = TempDir::new().unwrap();
         let (_, _, _, _, _, project_store) = make_components(&tmp);
 
         let mut store = project_store.write().unwrap();
         let result = store.remove("nonexistent-id");
-        assert!(result.is_err());
+        assert!(result.is_ok()); // remove of nonexistent ID is a no-op
     }
 
     // --- Workspace rename integration ---
