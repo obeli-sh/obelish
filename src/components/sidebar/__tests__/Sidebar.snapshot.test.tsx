@@ -43,7 +43,7 @@ describe('Sidebar snapshots', () => {
     const { container } = render(
       <Sidebar
         workspaces={[]}
-        activeWorkspaceId={null}
+        activeWorkspaceId=""
         onWorkspaceSelect={vi.fn()}
         onWorkspaceCreate={vi.fn()}
         onWorkspaceClose={vi.fn()}

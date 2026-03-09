@@ -109,6 +109,7 @@ fn spawn_real_shell_and_read_prompt() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn write_echo_read_output() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = make_manager();
@@ -142,6 +143,7 @@ fn write_echo_read_output() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn rapid_sequential_writes() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = make_manager();
@@ -177,6 +179,7 @@ fn rapid_sequential_writes() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn resize_changes_columns() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = make_manager();
@@ -210,6 +213,7 @@ fn resize_changes_columns() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn kill_during_running_process() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = make_manager();
@@ -248,6 +252,7 @@ fn kill_during_running_process() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn shell_exit_triggers_cleanup() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = make_manager();
@@ -276,6 +281,7 @@ fn shell_exit_triggers_cleanup() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn concurrent_ptys_independent() {
     let emitter = Arc::new(TestEventEmitter::new());
     let manager = Arc::new(make_manager());

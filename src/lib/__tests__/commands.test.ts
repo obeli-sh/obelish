@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getCommands, getCommandById, getCommandsByCategory } from '../commands';
+import { useUiStore } from '../../stores/uiStore';
 
 describe('commands', () => {
   describe('getCommands', () => {
@@ -242,6 +243,82 @@ describe('commands', () => {
       for (const cmd of getCommands()) {
         expect(cmd.label.length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  describe('command execute', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('navigation.focus-down calls focusAdjacentPane with down', () => {
+      const focusAdjacentPane = vi.fn();
+      vi.spyOn(useUiStore, 'getState').mockReturnValue({
+        ...useUiStore.getState(),
+        focusAdjacentPane,
+      });
+
+      const cmd = getCommandById('navigation.focus-down');
+      expect(cmd).toBeDefined();
+      cmd!.execute();
+
+      expect(focusAdjacentPane).toHaveBeenCalledWith('down');
+    });
+
+    it('navigation.focus-left calls focusAdjacentPane with left', () => {
+      const focusAdjacentPane = vi.fn();
+      vi.spyOn(useUiStore, 'getState').mockReturnValue({
+        ...useUiStore.getState(),
+        focusAdjacentPane,
+      });
+
+      const cmd = getCommandById('navigation.focus-left');
+      expect(cmd).toBeDefined();
+      cmd!.execute();
+
+      expect(focusAdjacentPane).toHaveBeenCalledWith('left');
+    });
+
+    it('app.toggle-command-palette calls toggleCommandPalette', () => {
+      const toggleCommandPalette = vi.fn();
+      vi.spyOn(useUiStore, 'getState').mockReturnValue({
+        ...useUiStore.getState(),
+        toggleCommandPalette,
+      });
+
+      const cmd = getCommandById('app.toggle-command-palette');
+      expect(cmd).toBeDefined();
+      cmd!.execute();
+
+      expect(toggleCommandPalette).toHaveBeenCalled();
+    });
+
+    it('app.open-project calls setProjectPickerOpen with true', () => {
+      const setProjectPickerOpen = vi.fn();
+      vi.spyOn(useUiStore, 'getState').mockReturnValue({
+        ...useUiStore.getState(),
+        setProjectPickerOpen,
+      });
+
+      const cmd = getCommandById('app.open-project');
+      expect(cmd).toBeDefined();
+      cmd!.execute();
+
+      expect(setProjectPickerOpen).toHaveBeenCalledWith(true);
+    });
+
+    it('app.toggle-settings calls toggleSettings', () => {
+      const toggleSettings = vi.fn();
+      vi.spyOn(useUiStore, 'getState').mockReturnValue({
+        ...useUiStore.getState(),
+        toggleSettings,
+      });
+
+      const cmd = getCommandById('app.toggle-settings');
+      expect(cmd).toBeDefined();
+      cmd!.execute();
+
+      expect(toggleSettings).toHaveBeenCalled();
     });
   });
 });

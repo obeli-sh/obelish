@@ -104,4 +104,59 @@ describe('SurfaceTabBar', () => {
     expect(screen.getByText('Surface 2')).toBeInTheDocument();
     expect(screen.getByText('Surface 3')).toBeInTheDocument();
   });
+
+  it('prevents default on middle mouse button mouseDown on close button', () => {
+    render(<SurfaceTabBar {...defaultProps} />);
+
+    const closeButtons = screen.getAllByRole('button', { name: /close/i });
+    const event = new MouseEvent('mousedown', { bubbles: true, button: 1 });
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+    const stopPropagation = vi.spyOn(event, 'stopPropagation');
+
+    closeButtons[0].dispatchEvent(event);
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(stopPropagation).toHaveBeenCalled();
+  });
+
+  it('does not prevent default on non-middle mouseDown on close button', () => {
+    render(<SurfaceTabBar {...defaultProps} />);
+
+    const closeButtons = screen.getAllByRole('button', { name: /close/i });
+    const event = new MouseEvent('mousedown', { bubbles: true, button: 0 });
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+
+    closeButtons[0].dispatchEvent(event);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('calls onSurfaceClose on middle-click (auxclick) on close button', () => {
+    const onSurfaceClose = vi.fn();
+    render(<SurfaceTabBar {...defaultProps} onSurfaceClose={onSurfaceClose} />);
+
+    const closeButtons = screen.getAllByRole('button', { name: /close/i });
+
+    // auxclick with button=1 (middle click)
+    const event = new MouseEvent('auxclick', { bubbles: true, button: 1 });
+    vi.spyOn(event, 'preventDefault');
+    vi.spyOn(event, 'stopPropagation');
+
+    closeButtons[1].dispatchEvent(event);
+
+    expect(onSurfaceClose).toHaveBeenCalledWith('surface-2');
+  });
+
+  it('does not close on non-middle auxclick on close button', () => {
+    const onSurfaceClose = vi.fn();
+    render(<SurfaceTabBar {...defaultProps} onSurfaceClose={onSurfaceClose} />);
+
+    const closeButtons = screen.getAllByRole('button', { name: /close/i });
+
+    // auxclick with button=2 (right click) - should early return
+    const event = new MouseEvent('auxclick', { bubbles: true, button: 2 });
+    closeButtons[0].dispatchEvent(event);
+
+    expect(onSurfaceClose).not.toHaveBeenCalled();
+  });
 });

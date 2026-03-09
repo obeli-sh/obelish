@@ -34,7 +34,7 @@ function extractMockHandlers(): string[] {
   if (endIdx === -1) throw new Error('Could not find end of handlers record');
   const body = src.slice(braceStart + 1, endIdx);
   const keys: string[] = [];
-  for (const m of body.matchAll(/^  (\w+)\s*[:(]/gm)) {
+  for (const m of body.matchAll(/^ {2}(\w+)\s*[:(]/gm)) {
     keys.push(m[1]);
   }
   return keys;

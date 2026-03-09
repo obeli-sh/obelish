@@ -432,5 +432,400 @@ describe('PaneSplitter', () => {
 
       expect(onPaneMove).not.toHaveBeenCalled();
     });
+
+    it('shows drop zone overlays on browser pane during dragOver', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 200, height: 200 });
+
+      // Before drag, no drop zones
+      expect(screen.queryByTestId('pane-drop-zone-left-pane-browser')).not.toBeInTheDocument();
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      // dragOver sets dragPreviewPosition via resolveDropPosition, triggering drop zone render
+      fireEvent.dragOver(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      // Drop zones should now be visible on the browser pane
+      expect(screen.getByTestId('pane-drop-zone-left-pane-browser')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-right-pane-browser')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-top-pane-browser')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-bottom-pane-browser')).toBeInTheDocument();
+    });
+
+    it('drop zone overlays have correct positioning styles for each edge', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 200, height: 200 });
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      // Drag over left edge to activate 'left' position
+      fireEvent.dragOver(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      const leftZone = screen.getByTestId('pane-drop-zone-left-pane-browser');
+      const rightZone = screen.getByTestId('pane-drop-zone-right-pane-browser');
+      const topZone = screen.getByTestId('pane-drop-zone-top-pane-browser');
+      const bottomZone = screen.getByTestId('pane-drop-zone-bottom-pane-browser');
+
+      // Left zone: positioned at left edge
+      expect(leftZone.style.left).toBe('0px');
+      expect(leftZone.style.top).toBe('0px');
+      expect(leftZone.style.width).toBe('22%');
+      expect(leftZone.style.height).toBe('100%');
+
+      // Right zone: positioned at right edge
+      expect(rightZone.style.right).toBe('0px');
+      expect(rightZone.style.top).toBe('0px');
+      expect(rightZone.style.width).toBe('22%');
+      expect(rightZone.style.height).toBe('100%');
+
+      // Top zone: positioned at top edge
+      expect(topZone.style.left).toBe('0px');
+      expect(topZone.style.top).toBe('0px');
+      expect(topZone.style.width).toBe('100%');
+      expect(topZone.style.height).toBe('22%');
+
+      // Bottom zone: positioned at bottom edge
+      expect(bottomZone.style.left).toBe('0px');
+      expect(bottomZone.style.bottom).toBe('0px');
+      expect(bottomZone.style.width).toBe('100%');
+      expect(bottomZone.style.height).toBe('22%');
+    });
+
+    it('clears drop zones on browser pane after dragLeave to outside', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      const { container } = render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 200, height: 200 });
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      fireEvent.dragOver(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      // Drop zones visible
+      expect(screen.getByTestId('pane-drop-zone-left-pane-browser')).toBeInTheDocument();
+
+      // dragLeave to an element outside the browser wrapper
+      fireEvent.dragLeave(browserWrapper, { relatedTarget: container });
+
+      // Drop zones should be cleared
+      expect(screen.queryByTestId('pane-drop-zone-left-pane-browser')).not.toBeInTheDocument();
+    });
+
+    it('clears drop zones on browser pane after drop', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 200, height: 200 });
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      fireEvent.dragOver(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      expect(screen.getByTestId('pane-drop-zone-left-pane-browser')).toBeInTheDocument();
+
+      fireEvent.drop(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      // Drop zones should be cleared after drop
+      expect(screen.queryByTestId('pane-drop-zone-left-pane-browser')).not.toBeInTheDocument();
+    });
+
+    it('calls onPaneMove with right position on browser pane drop', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 100, height: 100 });
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      dataTransfer.setData('application/x-obelisk-drop-position', 'right');
+      fireEvent.drop(browserWrapper, { dataTransfer, clientX: 95, clientY: 50 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-browser', 'right');
+    });
+
+    it('calls onPaneMove with top position on browser pane drop', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      dataTransfer.setData('application/x-obelisk-drop-position', 'top');
+      fireEvent.drop(browserWrapper, { dataTransfer, clientX: 50, clientY: 5 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-browser', 'top');
+    });
+
+    it('calls onPaneMove with bottom position on browser pane drop', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      dataTransfer.setData('application/x-obelisk-drop-position', 'bottom');
+      fireEvent.drop(browserWrapper, { dataTransfer, clientX: 50, clientY: 95 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-browser', 'bottom');
+    });
+
+    it('resolves center position when pane has zero-size rect', () => {
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-2', ptyId: 'pty-2' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const source = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const target = screen
+        .getByTestId('terminal-pane-pane-2')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      // Zero-size rect should resolve to 'center'
+      mockRect(target, { left: 0, top: 0, width: 0, height: 0 });
+
+      fireEvent.dragStart(source, { dataTransfer });
+      fireEvent.dragOver(target, { dataTransfer, clientX: 0, clientY: 0 });
+      fireEvent.drop(target, { dataTransfer, clientX: 0, clientY: 0 });
+
+      expect(onPaneMove).toHaveBeenCalledWith('pane-1', 'pane-2', 'center');
+    });
+
+    it('clears drop zones on browser pane after dragEnd', () => {
+      useWorkspaceStore.setState({
+        browserPaneUrls: { 'pane-browser': 'https://example.com' },
+      });
+      const onPaneMove = vi.fn();
+      const layout: LayoutNode = {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'leaf', paneId: 'pane-1', ptyId: 'pty-1' },
+          { type: 'leaf', paneId: 'pane-browser', ptyId: '' },
+        ],
+        sizes: [0.5, 0.5],
+      };
+      render(
+        <PaneSplitter
+          layout={layout}
+          activePaneId={null}
+          onPaneClick={vi.fn()}
+          onPaneMove={onPaneMove}
+        />,
+      );
+
+      const browserWrapper = screen
+        .getByTestId('browser-pane-pane-browser')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const sourceWrapper = screen
+        .getByTestId('terminal-pane-pane-1')
+        .closest('[data-testid="pane-wrapper"]') as HTMLElement;
+      const dataTransfer = createDataTransfer();
+      mockRect(browserWrapper, { left: 0, top: 0, width: 200, height: 200 });
+
+      fireEvent.dragStart(sourceWrapper, { dataTransfer });
+      fireEvent.dragOver(browserWrapper, { dataTransfer, clientX: 10, clientY: 100 });
+
+      expect(screen.getByTestId('pane-drop-zone-left-pane-browser')).toBeInTheDocument();
+
+      // dragEnd on the browser wrapper (which has the onDragEnd handler) clears drop zones
+      fireEvent.dragEnd(browserWrapper, { dataTransfer });
+
+      expect(screen.queryByTestId('pane-drop-zone-left-pane-browser')).not.toBeInTheDocument();
+    });
   });
 });

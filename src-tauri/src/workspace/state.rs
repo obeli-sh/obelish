@@ -50,6 +50,7 @@ impl WorkspaceState {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_workspace(
         &mut self,
         name: String,

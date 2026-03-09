@@ -169,6 +169,52 @@ describe('PaneWrapper', () => {
     });
   });
 
+  describe('drop zones', () => {
+    it('renders drop zone overlays when showDropZones is true', () => {
+      render(
+        <PaneWrapper
+          {...defaultProps}
+          showDropZones={true}
+          activeDropPosition="left"
+        />,
+      );
+
+      expect(screen.getByTestId('pane-drop-zone-left-pane-1')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-right-pane-1')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-top-pane-1')).toBeInTheDocument();
+      expect(screen.getByTestId('pane-drop-zone-bottom-pane-1')).toBeInTheDocument();
+    });
+
+    it('does not render drop zone overlays when showDropZones is false', () => {
+      render(
+        <PaneWrapper
+          {...defaultProps}
+          showDropZones={false}
+        />,
+      );
+
+      expect(screen.queryByTestId('pane-drop-zone-left-pane-1')).not.toBeInTheDocument();
+    });
+
+    it('highlights active drop position with stronger background', () => {
+      render(
+        <PaneWrapper
+          {...defaultProps}
+          showDropZones={true}
+          activeDropPosition="left"
+        />,
+      );
+
+      const leftZone = screen.getByTestId('pane-drop-zone-left-pane-1');
+      // The active position gets 28% opacity
+      expect(leftZone.style.background).toContain('28%');
+
+      // Non-active positions get 12% opacity
+      const rightZone = screen.getByTestId('pane-drop-zone-right-pane-1');
+      expect(rightZone.style.background).toContain('12%');
+    });
+  });
+
   describe('onResize', () => {
     let observeCallback: ResizeObserverCallback | null;
     let mockDisconnect: ReturnType<typeof vi.fn>;

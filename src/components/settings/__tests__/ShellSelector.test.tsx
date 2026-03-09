@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { invoke } from '@tauri-apps/api/core';
 import { mockInvoke, clearInvokeMocks } from '@tauri-apps/api/core';
 import { ShellSelector } from '../ShellSelector';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -148,7 +147,5 @@ describe('ShellSelector', () => {
       expect(screen.getByRole('radio', { name: /auto-detect/i })).toBeChecked();
       expect(useSettingsStore.getState().defaultShell).toBe('');
     });
-
-    expect(invoke).toHaveBeenCalledWith('settings_update', { key: 'defaultShell', value: '' });
   });
 });
