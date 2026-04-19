@@ -45,13 +45,6 @@ test-visual-update:
 bench:
     cargo bench -p obelisk
 
-# Run fuzz tests for N seconds (default 60)
-fuzz target="fuzz_osc_parser" seconds="60":
-    cd src-tauri && cargo +nightly fuzz run {{target}} -- -max_total_time={{seconds}}
-
-# List available fuzz targets
-fuzz-list:
-    cd src-tauri && cargo +nightly fuzz list
 
 # Build Tauri app for production
 release:
